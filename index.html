@@ -36,7 +36,7 @@
   color-scheme: dark;
 }
 [hidden] { display: none !important; }
-html, body { background: var(--bg); color: var(--text); }
+html, body { background: var(--bg); color: var(--text); overflow-anchor: none; }
 body { font-family: var(--font-ui); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; margin: 0; }
 .app {
   max-width: 1760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px;
@@ -125,8 +125,8 @@ body { font-family: var(--font-ui); font-size: 15px; line-height: 1.45; -webkit-
 .note { margin: 0; font-size: 13px; color: var(--faint); grid-column: 1 / -1; }
 .note b { color: var(--muted); font-weight: 600; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-width: 0; }
-.row > input[type=text] { flex: 1 1 140px; min-width: 0; }
-select, input[type=text], input[type=number], input[type=datetime-local], textarea {
+.row > input[type=text], .row > input[type=search] { flex: 1 1 140px; min-width: 0; }
+select, input[type=text], input[type=search], input[type=number], input[type=datetime-local], textarea {
   font: inherit; font-size: 14px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px;
   padding: 6px 9px; width: 100%; min-width: 0; box-sizing: border-box;
 }
@@ -181,6 +181,17 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .adv { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .adv-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 .adv-bar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+.adv-bar .grp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.adv-bar .grow { flex: 1 1 0; }
+.btn.amber { color: #FFD27A; border-color: #5C4A1E; background: transparent; }
+.btn.amber:hover { background: #2A2210; border-color: #7A6228; }
+.tl-tips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 12px; font-size: 13px; color: var(--muted); background: #0F1B28; border: 1px solid var(--line); border-radius: 6px; }
+.tl-tips b { color: var(--text); font-weight: 600; }
+.tl-tips span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-tips span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0.7; flex: none; }
+.tl-tips .btn { margin-left: auto; }
+.tl-tips .tc { display: none; }
+@media (pointer: coarse) { .tl-tips .tm { display: none; } .tl-tips .tc { display: inline-flex; } }
 .adv-main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; align-items: start; }
 .menu-wrap { position: relative; }
 .menu {
@@ -193,13 +204,26 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .menu button span { color: var(--faint); font-family: var(--font-jp); font-size: 12px; margin-left: auto; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
 .menu .mh { font-family: var(--font-num); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); padding: 6px 9px 2px; }
+.menu button em { font-style: normal; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu button kbd { margin-left: auto; flex: none; }
+.menu button.danger { color: #FF9AA2; }
+.menu button:disabled { opacity: 0.4; cursor: default; background: none; }
+.menu button .ck { width: 10px; flex: none; color: var(--accent); font-size: 10px; }
+.menu.ctx { position: fixed; top: 0; left: 0; z-index: 60; width: 280px; max-width: calc(100vw - 12px); max-height: min(440px, calc(100vh - 12px)); }
+.menu.pop { left: auto; right: 0; width: 340px; max-width: calc(100vw - 32px); padding: 8px; }
+.menu.pop button { flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 10px; white-space: normal; }
+.menu.pop button b { font-weight: 600; }
+.menu.pop button small { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.menu.pop .note { padding: 6px 10px 2px; }
 
-.tl { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; overflow: hidden; }
-.tl-scroll { overflow: auto; max-height: 560px; position: relative; overscroll-behavior: contain; }
+.tl { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.tl-scroll { overflow: auto; max-height: 560px; position: relative; overscroll-behavior: contain; touch-action: manipulation; }
 .tl-inner { position: relative; }
 .tl-row { display: flex; height: 36px; border-bottom: 1px solid #16222F; }
-.tl-row.grp { height: 26px; background: #0C141C; }
-.tl-row.grp .tl-label { background: #0C141C; color: var(--faint); font-family: var(--font-num); letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; }
+.tl-row.grp { height: 30px; background: #0C141C; }
+.tl-row.grp .tl-label { background: #0C141C; color: var(--faint); font-family: var(--font-num); letter-spacing: 0.07em; text-transform: uppercase; font-size: 12px; gap: 3px; padding: 0 4px 0 5px; }
+.tl-row.grp .tl-label:hover { color: var(--muted); }
+.tl-row.grp.folded .tl-label { color: var(--muted); }
 .tl-row.sel .tl-label { background: #13253A; color: #DCEEFF; }
 .tl-label {
   position: sticky; left: 0; z-index: 3; width: 184px; flex: none; box-sizing: border-box; background: var(--panel); border-right: 1px solid var(--line);
@@ -208,15 +232,35 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .tl-label .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .tl-label .dot { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }
 .tl-label .tag { font: 600 11px var(--font-num); color: var(--faint); letter-spacing: 0.06em; }
+.tl-label .sh { display: none; }
+.tl-label .cnt { font: 600 11px var(--font-num); letter-spacing: 0.04em; color: var(--muted); background: #16263A; border-radius: 9px; padding: 0 6px; line-height: 16px; }
 .tl-label .eye { background: none; border: 0; color: var(--faint); cursor: pointer; padding: 3px; border-radius: 4px; display: inline-flex; }
 .tl-label .eye:hover { color: var(--text); background: #1A2A3D; }
 .tl-label .eye svg { width: 15px; height: 15px; }
+.tl-fold, .tl-hb { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted); font: 600 15px var(--font-ui); line-height: 1; cursor: pointer; }
+.tl-fold { width: 16px; font-size: 11px; color: var(--faint); }
+.tl-fold:hover, .tl-hb:hover { background: #1A2A3D; color: var(--text); }
+.tl-fold:focus-visible, .tl-hb:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.tl-ren { flex: 1 1 auto; min-width: 0; height: 24px; padding: 2px 6px; font-size: 13px; user-select: text; -webkit-user-select: text; }
 .tl-lane { position: relative; flex: none; }
-.tl-ruler { position: sticky; top: 0; z-index: 4; height: 30px; background: #0E1720; border-bottom: 1px solid var(--line); }
-.tl-ruler .tl-label { background: #0E1720; z-index: 5; color: var(--faint); font: 600 12px var(--font-num); letter-spacing: 0.1em; }
+.tl-ruler { position: sticky; top: 0; z-index: 4; height: 46px; background: #0E1720; border-bottom: 1px solid var(--line); }
+.tl-ruler .tl-label { background: #0E1720; z-index: 5; cursor: default; }
+.tl-now { font: 600 16px var(--font-num) !important; letter-spacing: 0.04em; color: #FF8A8A; font-variant-numeric: tabular-nums; }
 .tl-ruler .tl-lane { cursor: ew-resize; }
-.tl-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid #22344A; font: 600 11px var(--font-num); color: var(--faint); padding: 3px 0 0 4px; box-sizing: border-box; pointer-events: none; }
-.tl-tick.minor { height: 30%; top: 70%; border-color: #1A2838; }
+.tl-tick { position: absolute; top: 20px; bottom: 0; border-left: 1px solid #22344A; font: 600 11px var(--font-num); color: var(--faint); padding: 3px 0 0 4px; box-sizing: border-box; pointer-events: none; }
+.tl-tick.minor { top: 38px; border-color: #1A2838; }
+.tl-moment {
+  position: absolute; top: 3px; height: 15px; box-sizing: border-box; margin-left: -1px; padding: 0 6px 0 4px; border-left: 2px solid var(--c); border-radius: 0 4px 4px 0;
+  background: #16273A; background: color-mix(in srgb, var(--c) 24%, #0E1720); color: #EAF2FA; font: 600 11px/15px var(--font-num); letter-spacing: 0.05em; white-space: nowrap; cursor: pointer; z-index: 1;
+}
+.tl-moment:hover { background: color-mix(in srgb, var(--c) 42%, #0E1720); }
+.tl-phead { position: absolute; top: 20px; bottom: 0; width: 2px; margin-left: -1px; background: #FF4A4A; pointer-events: none; z-index: 2; }
+.tl-phead::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top: 7px solid #FF4A4A; border-bottom: 0; }
+.tl-guide { position: absolute; top: 46px; bottom: 0; width: 0; border-left: 1px dashed var(--c); opacity: 0.32; pointer-events: none; }
+.tl-snapline { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #8CCBFF; box-shadow: 0 0 8px rgba(140, 203, 255, 0.8); pointer-events: none; z-index: 2; }
+.tl-marq { position: absolute; border: 1px solid #46A5FF; background: rgba(70, 165, 255, 0.12); border-radius: 3px; pointer-events: none; z-index: 2; }
+.tl-mini { position: absolute; top: 12px; height: 6px; width: 3px; border-radius: 2px; background: var(--c); opacity: 0.8; pointer-events: none; }
+.tl-fold-note { position: absolute; left: 8px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; color: var(--faint); pointer-events: none; }
 .tl-bar {
   position: absolute; top: 5px; height: 26px; border-radius: 5px; background: var(--c); color: #fff; box-sizing: border-box;
   font-size: 12px; font-weight: 600; padding: 0 10px; display: flex; align-items: center; overflow: hidden; white-space: nowrap;
@@ -225,9 +269,10 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .tl-bar.light { color: #1C1400; text-shadow: none; }
 .tl-bar.open { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 46px), rgba(0,0,0,0.25)); mask-image: linear-gradient(to right, #000 calc(100% - 46px), rgba(0,0,0,0.25)); }
 .tl-bar.off { opacity: 0.35; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.25) 0 6px, transparent 6px 12px); }
-.tl-bar.sel { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(70,165,255,0.6); z-index: 2; }
+.tl-bar.sel { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(70,165,255,0.6); z-index: 2; -webkit-mask-image: none; mask-image: none; }
 .tl-bar .h { position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize; }
 .tl-bar .h.l { left: 0; } .tl-bar .h.r { right: 0; }
+.tl-bar .h:hover { background: rgba(255,255,255,0.22); }
 .tl-mk {
   position: absolute; top: 6px; height: 24px; min-width: 24px; box-sizing: border-box; transform: translateX(-50%); border-radius: 12px; padding: 0 7px;
   display: flex; align-items: center; justify-content: center; font: 700 12px var(--font-num); color: #1C1400; background: var(--c); cursor: grab;
@@ -235,11 +280,19 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 }
 .tl-mk.dark { color: #fff; }
 .tl-mk.final { box-shadow: inset 0 0 0 2px #fff; }
+.tl-mk.tight { min-width: 12px; width: 12px; height: 12px; top: 12px; padding: 0; font-size: 0; }
 .tl-mk.sel { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(70,165,255,0.6); z-index: 2; }
 .tl-mk.dia { border-radius: 4px; transform: translateX(-50%) rotate(45deg); min-width: 16px; height: 16px; top: 10px; padding: 0; }
 .tl-span { position: absolute; top: 15px; height: 6px; border-radius: 3px; background: rgba(70,165,255,0.35); pointer-events: none; }
 .tl-ph { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #FF4A4A; pointer-events: none; z-index: 2; }
-.tl-empty { padding: 18px; color: var(--faint); font-size: 14px; }
+.tl-empty { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 6px; color: var(--faint); font-size: 13px; white-space: nowrap; pointer-events: none; }
+.tl-float { position: fixed; z-index: 70; pointer-events: none; font: 600 13px var(--font-num); letter-spacing: 0.03em; color: #fff; background: rgba(8, 14, 22, 0.94); border: 1px solid #36506D; border-radius: 6px; padding: 3px 9px; white-space: nowrap; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4); }
+.msel { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
+.msel-i { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text); background: none; border: 0; border-radius: 5px; padding: 5px 6px; cursor: pointer; }
+.msel-i:hover, .msel-i:focus-visible { background: #1A2A3D; outline: none; }
+.msel-i .dot { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }
+.msel-i .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msel-i .tm { font: 600 13px var(--font-num); color: var(--faint); font-variant-numeric: tabular-nums; }
 
 .insp { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; max-height: 640px; overflow: auto; }
 .insp .ihead { display: flex; align-items: center; gap: 8px; }
@@ -287,6 +340,45 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
 .pcard .j { font-family: var(--font-jp); font-size: 13px; color: var(--muted); }
 .pcard .m { font: 600 13px var(--font-num); color: var(--faint); letter-spacing: 0.04em; }
 .qlist { display: flex; flex-direction: column; gap: 4px; }
+/* projects */
+.proj-chip { display: inline-flex; align-items: center; gap: 7px; max-width: min(340px, 52vw); align-self: center; font: 600 14px var(--font-ui); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 10px; cursor: pointer; }
+.proj-chip:hover { border-color: #3D5A7B; background: #1A2A3D; }
+.proj-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.proj-chip svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.proj-chip .pj-lab { font: 600 11px var(--font-num); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+.proj-chip .pj-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.proj-chip.warn svg { color: var(--amber); }
+.pj-top { gap: 8px; }
+.pj-top input[type=search] { min-width: 0; flex: 0 1 220px; width: 220px; max-width: 100%; }
+.pjcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 10px; }
+.pjcard { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; min-width: 0; }
+.pjcard.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pj-open { position: relative; display: block; padding: 0; border: 0; background: #070C12; cursor: pointer; aspect-ratio: 16 / 9; max-width: 100%; }
+.pj-open img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pj-open:hover img { filter: brightness(1.12); }
+.pj-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pj-noimg { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font: 700 28px var(--font-num); color: #2B4058; }
+.pj-badge { position: absolute; left: 8px; top: 8px; font: 700 11px var(--font-num); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 4px; padding: 2px 7px; }
+.pj-body { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px 11px; min-width: 0; }
+.pj-name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-rename { font: 700 15px var(--font-ui); width: 100%; }
+.pj-sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-sub.dim { color: var(--faint); }
+.pj-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.note.warn { color: var(--amber); }
+/* import guide */
+.imp .lead { margin: 0; font-size: 15px; color: var(--text); }
+.imp h3 { margin-top: 6px; }
+.imp .steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; color: var(--muted); }
+.imp .steps b { color: var(--text); }
+.imp .srcs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.imp .src { display: flex; flex-direction: column; gap: 5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; min-width: 0; font-size: 13px; color: var(--muted); }
+.imp .src b { font-size: 14px; color: var(--text); }
+.imp .src .links { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.imp .src a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.imp .src a:hover { text-decoration: underline; }
+.imp .src .tip { color: var(--faint); }
+.imp code { font-family: var(--font-num); font-size: 13px; color: var(--text); background: #0B131C; border-radius: 3px; padding: 0 4px; overflow-wrap: anywhere; }
 .qrow { display: grid; grid-template-columns: 92px 54px minmax(0, 1fr) 34px; gap: 10px; align-items: center; text-align: left; font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
 .qrow:hover { border-color: #3D5A7B; background: #1A2A3D; }
 .qrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -322,6 +414,7 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
 .bz .prev i { position: absolute; top: 6px; left: 6px; width: 46px; height: 20px; border-radius: 4px; background: var(--accent); }
 .drop { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 5px; }
 
+@media (max-width: 1560px) { .tagline { display: none; } }
 @media (max-width: 1100px) {
   .adv-main { grid-template-columns: 1fr; }
   .insp { max-height: none; }
@@ -329,11 +422,19 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
 @media (max-width: 640px) {
   .brand { font-size: 22px; }
   .tagline { display: none; }
+  .proj-chip .pj-lab { display: none; }
   .transport { gap: 8px; }
   .timeline { flex-basis: 100%; order: 5; }
   .stage-wrap { width: 100%; }
   .stage-hint { display: none; }
   .tl-label { width: 132px; }
+  .tl-label .cnt, .tl-label .tag, .tl-label .lg { display: none; }
+  .tl-row.grp .tl-label { letter-spacing: 0.02em; }
+  .adv-bar .sep { display: none; }
+  .tl-fold { width: 12px; }
+  .tl-hb { width: 19px; }
+  .tl-label .sh { display: inline; }
+  .adv-bar .grow { display: none; }
   .qrow { grid-template-columns: 74px 46px minmax(0, 1fr) 30px; gap: 6px; }
   .slots { grid-template-columns: 1fr 1fr; }
   .slots .h { display: none; }
@@ -349,6 +450,7 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
   <header class="top">
     <div class="brand-wrap">
       <span class="brand">QUAK<b>E</b>R<sup>2</sup></span>
+      <button class="proj-chip" id="projChip" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 4.2c0-.8.6-1.4 1.4-1.4h3l1.4 1.6h5.2c.8 0 1.4.6 1.4 1.4v6.4c0 .8-.6 1.4-1.4 1.4H3.2c-.8 0-1.4-.6-1.4-1.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="pj-lab">Project</span><span class="pj-nm" id="projName">…</span></button>
       <span class="tagline"><span class="ja">地震シミュレーター · </span>earthquake simulator &amp; replay viewer</span>
     </div>
     <div class="seg mode" role="radiogroup" aria-label="Editor mode">
@@ -479,30 +581,63 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
   <!-- ================= ADVANCED ================= -->
   <section class="adv" id="advPanel" aria-label="Advanced editor" hidden>
     <div class="adv-bar">
-      <div class="menu-wrap">
-        <button class="btn primary" id="btnAddBox" type="button" aria-haspopup="true" aria-expanded="false">＋ Add box</button>
-        <div class="menu" id="addMenu" role="menu" hidden></div>
+      <div class="grp" role="group" aria-label="Add">
+        <div class="menu-wrap">
+          <button class="btn primary" id="btnAddBox" type="button" aria-haspopup="true" aria-expanded="false">＋ Add box</button>
+          <div class="menu" id="addMenu" role="menu" hidden></div>
+        </div>
+        <button class="btn" id="btnAddEvent" type="button">＋ Quake</button>
+        <button class="btn" id="btnAddReport" type="button">＋ EEW report</button>
+        <button class="btn" id="btnAddCam" type="button">＋ Camera key</button>
+        <button class="btn" id="btnAddCue" type="button">＋ Sound cue</button>
       </div>
-      <button class="btn" id="btnAddEvent" type="button">＋ Quake</button>
-      <button class="btn" id="btnAddReport" type="button">＋ EEW report</button>
-      <button class="btn" id="btnAddCam" type="button">＋ Camera key</button>
-      <button class="btn" id="btnAddCue" type="button">＋ Sound cue</button>
       <span class="sep" aria-hidden="true"></span>
-      <button class="btn ghost" id="btnAutoTime" type="button" title="Re-time the standard boxes from the physics">Auto-time</button>
-      <button class="btn ghost" id="btnUndo" type="button" title="Undo (Ctrl+Z)">Undo</button>
-      <button class="btn ghost" id="btnRedo" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <div class="grp" role="group" aria-label="Edit">
+        <button class="btn ghost" id="btnUndo" type="button" title="Undo (Ctrl+Z)">Undo</button>
+        <button class="btn ghost" id="btnRedo" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        <button class="btn ghost" id="btnDup" type="button" title="Duplicate the selection (D)" disabled>Duplicate</button>
+        <button class="btn danger" id="btnDel" type="button" title="Delete the selection (Delete)" disabled>Delete</button>
+      </div>
       <span class="sep" aria-hidden="true"></span>
-      <label class="check inline"><input type="checkbox" id="snapOn" checked> Snap</label>
-      <button class="btn ghost icon" id="btnZoomOut" type="button" aria-label="Zoom timeline out">−</button>
-      <button class="btn ghost icon" id="btnZoomIn" type="button" aria-label="Zoom timeline in">＋</button>
-      <button class="btn ghost" id="btnFit" type="button">Fit</button>
-      <span class="sep" aria-hidden="true"></span>
-      <button class="btn ghost" id="btnFromEasy" type="button" title="Replace this timeline with the Easy setup">Rebuild from Easy</button>
+      <div class="grp" role="group" aria-label="Timeline view">
+        <label class="check inline" title="Hold Alt while dragging to flip this"><input type="checkbox" id="snapOn" checked> Snap</label>
+        <button class="btn ghost icon" id="btnZoomOut" type="button" aria-label="Zoom timeline out" title="Zoom out (or Ctrl + scroll)">−</button>
+        <button class="btn ghost icon" id="btnZoomIn" type="button" aria-label="Zoom timeline in" title="Zoom in (or Ctrl + scroll)">＋</button>
+        <button class="btn ghost" id="btnFit" type="button" title="Fit the whole timeline">Fit</button>
+        <button class="btn ghost icon toggle" id="btnTips" type="button" aria-pressed="true" aria-label="Timeline tips" title="Timeline tips">?</button>
+      </div>
+      <span class="grow" aria-hidden="true"></span>
+      <div class="menu-wrap">
+        <button class="btn amber" id="btnResetAll" type="button" aria-haspopup="true" aria-expanded="false">Reset all…</button>
+        <div class="menu pop" id="resetPop" role="menu" hidden>
+          <div class="mh">Reset the timeline</div>
+          <button type="button" role="menuitem" data-reset="keep"><b>Reset everything but the quakes</b><small>Keeps your quakes and scenario settings. Rebuilds the EEW reports and standard boxes from the physics, and clears camera keys and sound cues.</small></button>
+          <button type="button" role="menuitem" data-reset="easy"><b>Start over from the Easy setup</b><small>Replaces the whole timeline, quakes included, with what Easy mode has.</small></button>
+          <button type="button" role="menuitem" data-reset="time"><b>Just re-time the standard boxes</b><small>Moves the EEW panel, flash, report and alerts back to their automatic times. Nothing gets deleted.</small></button>
+          <p class="note">Undo (Ctrl+Z) brings it all back.</p>
+        </div>
+      </div>
+    </div>
+    <div class="tl-tips" id="tlTips" hidden>
+      <b>Timeline tips</b>
+      <span class="tm">Click the ruler to jump there</span>
+      <span class="tm">Double-click a row to add something at that time</span>
+      <span class="tm">Right-click anything for options</span>
+      <span class="tm">Shift-click, or drag across empty space, to grab several</span>
+      <span class="tm">Hold Alt while dragging to skip snapping</span>
+      <span class="tm">Ctrl + scroll zooms</span>
+      <span class="tc">Tap the ruler to jump there</span>
+      <span class="tc">Double-tap a row to add something at that time</span>
+      <span class="tc">Press and hold anything for options</span>
+      <span class="tc">Swipe empty space to scroll the timeline</span>
+      <button class="btn sm ghost" id="btnTipsOff" type="button">Got it</button>
     </div>
     <div class="adv-main">
       <div class="tl" id="tl"><div class="tl-scroll" id="tlScroll"><div class="tl-inner" id="tlInner"></div></div></div>
       <aside class="insp" id="insp" aria-label="Inspector"></aside>
     </div>
+    <div class="menu ctx" id="ctxMenu" role="menu" hidden></div>
+    <div class="tl-float" id="tlFloat" hidden></div>
   </section>
 
   <footer class="foot">
@@ -516,12 +651,13 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
   <div class="dlg-in">
     <div class="dlg-head"><h2 id="libH">Library<span class="ja">ライブラリ</span></h2><button class="btn ghost" type="button" data-close>Close</button></div>
     <div class="tabs" role="tablist" id="libTabs">
-      <button role="tab" type="button" data-tab="presets" aria-selected="true">Scenarios</button>
+      <button role="tab" type="button" data-tab="projects" aria-selected="true">My projects</button>
+      <button role="tab" type="button" data-tab="presets" aria-selected="false">Preloaded scenarios</button>
       <button role="tab" type="button" data-tab="real" aria-selected="false">Real quakes</button>
-      <button role="tab" type="button" data-tab="saved" aria-selected="false">Saved</button>
       <button role="tab" type="button" data-tab="import" aria-selected="false">Import</button>
     </div>
-    <div class="dlg-body" data-pane="presets"><div id="libPresets"></div></div>
+    <div class="dlg-body" data-pane="projects"><div id="libProjects"></div></div>
+    <div class="dlg-body" data-pane="presets" hidden><div id="libPresets"></div></div>
     <div class="dlg-body" data-pane="real" hidden>
       <div class="row">
         <input type="text" id="realSearch" placeholder="Search by name, place or year" autocomplete="off" aria-label="Search real quakes">
@@ -531,24 +667,60 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
           <input type="radio" name="realReg" id="rrUs" value="us"><label for="rrUs">US</label>
         </div>
       </div>
-      <p class="note">Real time, place, depth and magnitude, and the maximum intensity matched to the official record where one exists. The station network and EEW sequence are simulated.</p>
+      <p class="note">Real time, place, depth and magnitude, and the maximum intensity matched to the official record where one exists. The station network and EEW sequence are simulated. Each one opens as a new project.</p>
       <div class="qlist" id="realList"></div>
     </div>
-    <div class="dlg-body" data-pane="saved" hidden>
-      <div class="row"><input type="text" id="saveName" placeholder="Name this scenario" aria-label="Scenario name"><button class="btn primary" id="btnSaveLocal" type="button">Save current</button></div>
-      <p class="note">Saved in this browser only. Use Share for a code or a file you can move around.</p>
-      <div class="list" id="savedList"></div>
-    </div>
-    <div class="dlg-body" data-pane="import" hidden>
-      <p class="note">Paste a Quaker code, a scenario file’s text, or earthquake JSON from a feed. Live feeds can’t be fetched from inside this page, so open the feed in another tab, copy everything, and paste it here.</p>
-      <div class="kv">
-        <span>USGS</span><span>earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson (or any event’s GeoJSON)</span>
-        <span>P2PQuake</span><span>api.p2pquake.net/v2/history?codes=551&amp;limit=10</span>
-        <span>JMA</span><span>www.jma.go.jp/bosai/quake/data/list.json, then one event’s JSON file</span>
+    <div class="dlg-body imp" data-pane="import" hidden>
+      <p class="lead">Bring in a real earthquake from a live feed, or a scenario someone shared with you. Whatever you import opens as a new project.</p>
+
+      <h3>Quickest: grab the latest</h3>
+      <div class="row">
+        <button class="btn" type="button" data-feed="usgs">USGS · world, past week</button>
+        <button class="btn" type="button" data-feed="p2p">P2PQuake · Japan, with real shindo</button>
+        <button class="btn" type="button" data-feed="jma">JMA · Japan, official list</button>
       </div>
-      <textarea id="importText" rows="7" placeholder="Paste here" spellcheck="false" aria-label="Paste import data"></textarea>
+      <p class="note">These buttons work when Quaker runs on a normal website, like the GitHub Pages version. Inside Claude the page is sandboxed and can’t reach other sites, so use copy and paste.</p>
+
+      <h3>Copy and paste (works everywhere)</h3>
+      <ol class="steps">
+        <li>Open one of the links below. It opens in a new tab and shows a wall of text. That’s the data.</li>
+        <li>Select all of it (<kbd>Ctrl</kbd>+<kbd>A</kbd>, or <kbd>⌘</kbd>+<kbd>A</kbd> on a Mac) and copy it (<kbd>Ctrl</kbd>+<kbd>C</kbd> or <kbd>⌘</kbd>+<kbd>C</kbd>). On a phone, long-press the text, then Select All and Copy.</li>
+        <li>Come back here, paste it into the box below and press <b>Read it</b>.</li>
+        <li>If the feed has several quakes you get a list. Tap the one you want.</li>
+      </ol>
+      <div class="srcs">
+        <div class="src">
+          <b>USGS</b><span>Every country, updated within minutes. Magnitude, place, depth and time.</span>
+          <div class="links">
+            <a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson" target="_blank" rel="noopener">M2.5+ past week</a>
+            <a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson" target="_blank" rel="noopener">M4.5+ past month</a>
+            <a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson" target="_blank" rel="noopener">Significant, past month</a>
+          </div>
+          <span class="tip">Older quakes: <a href="https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&amp;starttime=2011-03-01&amp;endtime=2011-03-31&amp;minmagnitude=7" target="_blank" rel="noopener">this search</a> lists M7+ from March 2011. Change the dates and the magnitude in the address bar to find yours.</span>
+        </div>
+        <div class="src">
+          <b>P2PQuake</b><span>Japan, from JMA’s reports, with the shindo each town actually felt. Quaker paints those real intensities onto the map.</span>
+          <div class="links">
+            <a href="https://api.p2pquake.net/v2/history?codes=551&amp;limit=30" target="_blank" rel="noopener">Latest 30 quakes</a>
+          </div>
+          <span class="tip">Change <code>limit=30</code> in the address to anything up to 100 for more.</span>
+        </div>
+        <div class="src">
+          <b>JMA</b><span>The official Japanese list. Pasting it gives you each quake’s place, magnitude and top shindo.</span>
+          <div class="links">
+            <a href="https://www.jma.go.jp/bosai/quake/data/list.json" target="_blank" rel="noopener">Quake list</a>
+          </div>
+          <span class="tip">For one quake’s full town-by-town intensity, find it in the list, copy its <code>json</code> file name, open <code>www.jma.go.jp/bosai/quake/data/</code> followed by that name, and paste that page instead.</span>
+        </div>
+        <div class="src">
+          <b>Quaker codes and files</b><span>A code someone shared (it starts with <code>QK2-</code>), or a <code>.json</code> file from Share or a project’s Export.</span>
+          <span class="tip">Paste the code in the box, or use Open a file.</span>
+        </div>
+      </div>
+
+      <textarea id="importText" rows="6" placeholder="Paste the feed, code or file here" spellcheck="false" aria-label="Paste import data"></textarea>
       <div class="row"><button class="btn primary" id="btnImport" type="button">Read it</button><label class="btn ghost" for="importFile">Open a file…</label><input type="file" id="importFile" accept=".json,application/json,text/plain" class="sr"></div>
-      <p class="note" id="importNote"></p>
+      <p class="note" id="importNote" role="status"></p>
       <div class="qlist" id="importList"></div>
     </div>
   </div>
@@ -622,10 +794,26 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
         <span><kbd>E</kbd></span><span>Switch Easy and Advanced</span>
         <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span><span>Undo (Advanced)</span>
         <span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></span><span>Redo (Advanced)</span>
-        <span><kbd>Delete</kbd></span><span>Remove the selected box, report, key or cue (Advanced)</span>
-        <span><kbd>D</kbd></span><span>Duplicate the selected box (Advanced)</span>
-        <span><kbd>[</kbd> <kbd>]</kbd></span><span>Nudge the selection 0.5 s earlier or later (Advanced)</span>
-        <span><kbd>Esc</kbd></span><span>Cancel picking, close menus</span>
+        <span><kbd>Delete</kbd></span><span>Remove whatever is selected (Advanced)</span>
+        <span><kbd>D</kbd> or <kbd>Ctrl</kbd>+<kbd>D</kbd></span><span>Duplicate the selection (Advanced)</span>
+        <span><kbd>Ctrl</kbd>+<kbd>A</kbd></span><span>Select every box, report, camera key and cue (Advanced)</span>
+        <span><kbd>[</kbd> <kbd>]</kbd></span><span>Nudge the selection 0.5 s earlier or later. Hold Shift for 0.1 s (Advanced)</span>
+        <span><kbd>S</kbd></span><span>Split the selected box at the playhead (Advanced)</span>
+        <span><kbd>H</kbd></span><span>Hide or show the selected boxes (Advanced)</span>
+        <span><kbd>Alt</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></span><span>Move a box’s row up or down (Advanced)</span>
+        <span><kbd>Esc</kbd></span><span>Cancel picking, close menus, then let go of the selection</span>
+      </div>
+      <h3 class="set-h" style="margin-top:6px">On the timeline</h3>
+      <div class="kv" style="font-size:14px;gap:8px 16px">
+        <span>Click the ruler</span><span>Move the playhead there. The colored tags on top are key moments (detection, warning, report). Click one to jump to it.</span>
+        <span>Click empty space</span><span>Move the playhead and let go of the selection</span>
+        <span>Drag empty space</span><span>Draw a box to select everything inside it</span>
+        <span>Shift-click</span><span>Add to or take out of the selection. Dragging one moves them all.</span>
+        <span>Double-click a row</span><span>Add something to that row at that time</span>
+        <span>Right-click</span><span>Options for whatever you clicked. On a phone, press and hold.</span>
+        <span>▾ on a track</span><span>Fold the track away. ＋ adds to it, ⋯ has the rest.</span>
+        <span><kbd>Alt</kbd> while dragging</span><span>Turn snapping off (or on) for that drag</span>
+        <span><kbd>Ctrl</kbd> + scroll</span><span>Zoom the timeline around the pointer</span>
       </div>
     </div>
   </div>
@@ -1890,25 +2078,7 @@ function generateDoc(DB, e) {
   const ev = { id: 'e1', t0: 0, lat: +e.lat, lon: +e.lon, depth: +e.depth, M: +e.M, strike: +e.strike || 0, shaking: true, bias: 0,
     targetMax: e.targetMax ?? null, name: e.name || null, obsMap: e.obsMap || null, eewAuto: true, tune: {}, country: e.country || 'auto' };
   const ph = buildPhysics(DB, ev);
-  const X = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
   const reps = genEEW(DB, ph, ev.tune).map((r) => ({ id: newId('r'), ev: 'e1', ...r, maxOverride: null }));
-  const tm = autoTiming(ph, reps, { flash: X.flash });
-  const tLive = X.flash && tm.tFlashR !== null ? tm.tFlashR : tm.tReport;
-  const items = [];
-  items.push(mkItem('eew', 'e1', -3, tLive, itemDefaults('eew')));
-  items.push(mkItem('countdown', 'auto', -3, tLive, itemDefaults('countdown')));
-  if (X.flash && tm.tFlashR !== null) items.push(mkItem('flash', 'e1', tm.tFlashR, tm.tReport, itemDefaults('flash')));
-  items.push(mkItem('report', 'e1', tm.tReport, null, itemDefaults('report')));
-  let tAux = tm.tReport + 3;
-  const later = () => { const t = tAux; tAux += 2.5; return t; };
-  if (X.tsunami && ph.shaking && tsunamiFor(DB, ph).max >= 0) items.push(mkItem('tsunami', 'e1', Math.max((tm.tFlashR ?? tm.tReport) + 1.5, (tm.tLast ?? 0) + 3), null, itemDefaults('tsunami')));
-  if (X.megaquake && megaquakeFor(ph)) items.push(mkItem('megaquake', 'e1', later(), null, itemDefaults('megaquake')));
-  if (X.longperiod && longPeriodFor(DB, ph).max >= 1) items.push(mkItem('longperiod', 'e1', later(), null, itemDefaults('longperiod')));
-  if (X.aftershock) items.push(mkItem('aftershock', 'e1', later(), null, itemDefaults('aftershock')));
-  if (X.liquefaction && liquefactionFor(DB, ph).level) items.push(mkItem('liquefaction', 'e1', later(), null, itemDefaults('liquefaction')));
-  if (X.landslide && landslideFor(DB, ph).level) items.push(mkItem('landslide', 'e1', later(), null, itemDefaults('landslide')));
-  if (X.timestamp) items.push(mkItem('timestamp', 'e1', ph.tDet ?? 2, null, itemDefaults('timestamp')));
-  if (X.ticker) items.push(mkItem('ticker', 'e1', (reps[0] ? reps[0].t : 3) + 0.6, null, itemDefaults('ticker')));
   const doc = {
     v: DOC_V,
     meta: { title: e.title || '', kind: e.kind || 'scenario', source: e.source || '', note: '' },
@@ -1916,13 +2086,56 @@ function generateDoc(DB, e) {
     duration: null,
     events: [ev],
     eew: reps,
-    items,
+    items: [],
     camera: { mode: 'auto', start: null, keys: [] },
     cues: [],
     sensors: { density: 1, custom: [] },
     my: e.my ? { lat: +e.my.lat, lon: +e.my.lon } : null,
   };
+  doc.items = defaultItemsFor(DB, doc, e.extras);
   return doc;
+}
+// The standard boxes for a doc's quakes: what a fresh Easy scenario gets for the first quake (EEW, countdown,
+// flash, report and the alerts its extras turn on), and an EEW panel for each quake after it.
+function defaultItemsFor(DB, doc, extras) {
+  const X = { ...EXTRAS_DEFAULT, ...(extras || {}) };
+  const items = [];
+  doc.events.forEach((ev, k) => {
+    const ph = buildPhysics(DB, ev);
+    const reps = doc.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t).map((r) => ({ ...r, t: r.t - ev.t0 }));
+    const tm = autoTiming(ph, reps, { flash: X.flash });
+    const T = (v) => +(v + ev.t0).toFixed(2);
+    const tLive = X.flash && tm.tFlashR !== null ? tm.tFlashR : tm.tReport;
+    if (k > 0) {
+      if (reps.length) items.push(mkItem('eew', ev.id, T(reps[0].t - 0.2), T(Math.max(reps[reps.length - 1].t + 20, tLive)), { ...itemDefaults('eew'), standby: false }));
+      return;
+    }
+    items.push(mkItem('eew', ev.id, -3, T(tLive), itemDefaults('eew')));
+    items.push(mkItem('countdown', 'auto', -3, T(tLive), itemDefaults('countdown')));
+    if (X.flash && tm.tFlashR !== null) items.push(mkItem('flash', ev.id, T(tm.tFlashR), T(tm.tReport), itemDefaults('flash')));
+    items.push(mkItem('report', ev.id, T(tm.tReport), null, itemDefaults('report')));
+    let tAux = tm.tReport + 3;
+    const later = () => { const t = tAux; tAux += 2.5; return T(t); };
+    if (X.tsunami && ph.shaking && tsunamiFor(DB, ph).max >= 0) items.push(mkItem('tsunami', ev.id, T(Math.max((tm.tFlashR ?? tm.tReport) + 1.5, (tm.tLast ?? 0) + 3)), null, itemDefaults('tsunami')));
+    if (X.megaquake && megaquakeFor(ph)) items.push(mkItem('megaquake', ev.id, later(), null, itemDefaults('megaquake')));
+    if (X.longperiod && longPeriodFor(DB, ph).max >= 1) items.push(mkItem('longperiod', ev.id, later(), null, itemDefaults('longperiod')));
+    if (X.aftershock) items.push(mkItem('aftershock', ev.id, later(), null, itemDefaults('aftershock')));
+    if (X.liquefaction && liquefactionFor(DB, ph).level) items.push(mkItem('liquefaction', ev.id, later(), null, itemDefaults('liquefaction')));
+    if (X.landslide && landslideFor(DB, ph).level) items.push(mkItem('landslide', ev.id, later(), null, itemDefaults('landslide')));
+    if (X.timestamp) items.push(mkItem('timestamp', ev.id, T(ph.tDet ?? 2), null, itemDefaults('timestamp')));
+    if (X.ticker) items.push(mkItem('ticker', ev.id, T((reps[0] ? reps[0].t : 3) + 0.6), null, itemDefaults('ticker')));
+  });
+  return items;
+}
+// Advanced "Reset all": keep the quakes (and the scenario settings), rebuild everything on the timeline from the physics
+function resetDocTimeline(DB, doc, extras, lang) {
+  for (const ev of doc.events) ev.eewAuto = true;
+  doc.eew = [];
+  refreshAutoEEW(DB, doc);
+  doc.items = defaultItemsFor(DB, doc, extras).map((it) => (lang === 'en' ? { ...it, data: localizeDefaults(it.type, it.data, 'en') } : it));
+  doc.camera = { mode: 'auto', start: null, keys: [] };
+  doc.cues = [];
+  doc.duration = null;
 }
 
 // normalize/repair any doc (imported, stored, pasted)
@@ -2307,7 +2520,20 @@ function importText(DB, text) {
   else if (Array.isArray(j) && j.length && j[0] && (j[0].earthquake || j[0].code === 551)) j.forEach((q) => { if (q.earthquake) pushP2P(q); });
   else if (j && j.earthquake) pushP2P(j);
   else if (j && (j.Body || j.body)) pushJMA(j);
-  else if (Array.isArray(j) && j.length && j[0] && j[0].json && j[0].anm) throw new Error('That’s JMA’s list file. Open one event’s JSON (the "json" file name in the list) and paste that instead.');
+  else if (Array.isArray(j) && j.length && j[0] && j[0].json && 'anm' in j[0]) {
+    // JMA's list: one row per report, newest first. Keep each quake's newest report that has a hypocenter.
+    const seen = new Set();
+    for (const r of j) {
+      if (!r || typeof r !== 'object') continue;
+      const key = r.eid || r.json;
+      if (seen.has(key)) continue;
+      const c = parseIsoDepth(r.cod);
+      if (!c || !isFinite(+r.mag)) continue;
+      seen.add(key);
+      out.push({ src: 'JMA', time: Date.parse(r.at || ''), lat: c.lat, lon: c.lon, depth: c.depth ?? 10, M: +r.mag, title: `${r.anm || '地震'} M${r.mag}`,
+        ja: r.anm || null, en: r.en_anm || '', max: shFromAny(r.maxi), obsMap: null, json: r.json, id: r.eid || '' });
+    }
+  }
   else throw new Error('Quaker reads USGS GeoJSON, P2PQuake JSON (code 551) and JMA bosai quake JSON. This file is none of those.');
   if (!out.length) throw new Error('No earthquakes with a location were found in that data.');
   return out.filter((e) => isFinite(e.lat) && isFinite(e.lon));
@@ -2323,7 +2549,7 @@ function easyFromImport(DB, q) {
     lat: +q.lat, lon: +q.lon, M: clamp(+q.M, 2.5, 9.5), depth: clamp(+q.depth, 0, 700), strike: 30, kind: 'real', preset: 'custom',
     title: q.title, source: q.src, clock: { mode: 'custom', start: epochToWall(ep, tz), tz: 'auto' },
     targetMax: q.obsMap ? null : q.max >= 0 ? q.max : null, obsMap: q.obsMap || null,
-    name: q.ja ? { ja: q.ja, en: '' } : null,
+    name: q.ja ? { ja: q.ja, en: q.en || '' } : null,
   });
   return e;
 }
@@ -4286,7 +4512,7 @@ function drawBoxes(c, env, lay) {
       c.restore();
     }
     try { BOX[b.en.it.type].draw(c, env, b.en, b.w, b.h, b.m); } catch (e) { if (!R._boxErr) { R._boxErr = 1; console.error('box draw failed', b.en.it.type, e); } }
-    if (env.selected && env.selected === b.en.it.id) {
+    if (env.selected && env.selected.has(b.en.it.id)) {
       c.setLineDash([8, 6]); c.lineWidth = 2.5; c.strokeStyle = '#46A5FF';
       rr(c, -5, -5, b.w + 10, b.h + 10, 13); c.stroke(); c.setLineDash([]);
     }
@@ -4764,37 +4990,48 @@ const BUILTIN_SOUNDS = {
   } },
 };
 
-// ---------------------------------------------------------------- IndexedDB for uploaded sounds
+// ---------------------------------------------------------------- IndexedDB: uploaded sounds and saved projects
 const IDB = {
-  db: null, tried: false,
+  db: null, p: null,
   open() {
-    if (this.db || this.tried) return Promise.resolve(this.db);
-    this.tried = true;
-    return new Promise((res) => {
+    if (this.p) return this.p;
+    this.p = new Promise((res) => {
+      let done = false;
+      const fin = (v) => { if (!done) { done = true; res(v); } };
       try {
-        const r = indexedDB.open('quaker-v2', 1);
-        r.onupgradeneeded = () => { try { r.result.createObjectStore('sounds', { keyPath: 'id' }); } catch (e) { /* exists */ } };
-        r.onsuccess = () => { this.db = r.result; res(this.db); };
-        r.onerror = () => res(null);
-        r.onblocked = () => res(null);
-      } catch (e) { res(null); }
+        const r = indexedDB.open('quaker-v2', 2);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          for (const s of ['sounds', 'projects']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+        };
+        r.onsuccess = () => {
+          this.db = r.result;
+          this.db.onversionchange = () => { try { this.db.close(); } catch (e) { /* closing */ } };
+          fin(this.db);
+        };
+        r.onerror = () => fin(null);
+        // another tab still has the old version open: give it a moment to let go
+        r.onblocked = () => setTimeout(() => fin(null), 4000);
+      } catch (e) { fin(null); }
     });
+    return this.p;
   },
-  async op(mode, fn) {
+  async op(store, mode, fn) {
     const db = await this.open();
     if (!db) return null;
     return new Promise((res) => {
       try {
-        const tx = db.transaction('sounds', mode), st = tx.objectStore('sounds');
+        const tx = db.transaction(store, mode), st = tx.objectStore(store);
         const r = fn(st);
         tx.oncomplete = () => res(r && 'result' in r ? r.result : true);
         tx.onerror = () => res(null);
+        tx.onabort = () => res(null);
       } catch (e) { res(null); }
     });
   },
-  all() { return this.op('readonly', (st) => st.getAll()); },
-  put(rec) { return this.op('readwrite', (st) => st.put(rec)); },
-  del(id) { return this.op('readwrite', (st) => st.delete(id)); },
+  all(store = 'sounds') { return this.op(store, 'readonly', (st) => st.getAll()); },
+  put(rec, store = 'sounds') { return this.op(store, 'readwrite', (st) => st.put(rec)); },
+  del(id, store = 'sounds') { return this.op(store, 'readwrite', (st) => st.delete(id)); },
 };
 async function loadSoundFiles() {
   const recs = (await IDB.all()) || [];
@@ -4980,11 +5217,26 @@ function bezierEditor(get, set, o = {}) {
 }
 
 // ---------------------------------------------------------------- Advanced editor state
-const ED = { pps: 12, labelW: 184, drag: null, lastCo: null, lastCoT: 0, eewTimer: 0, renderQ: false };
+const ED = { pps: 12, labelW: 184, laneW: 0, drag: null, pending: false, lastCo: null, lastCoT: 0, eewTimer: 0, renderQ: false,
+  marks: [], collapse: {}, auto: { v: 0, raf: 0, cb: null }, lp: { timer: 0, fired: false }, gid: 0, lastTap: null, dblT: 0 };
+// timeline tracks: key, title, color, what its ＋ button adds
+const TRACKS = {
+  quakes: ['Quakes', '#E8101E', 'Add a quake at the playhead', 'Quakes'],
+  eew: ['EEW reports', '#F2B000', 'Add an EEW report at the playhead', 'EEW'],
+  boxes: ['Boxes', '#46A5FF', 'Add a box at the playhead', 'Boxes'],
+  cam: ['Camera', '#46A5FF', 'Add a camera key at the playhead', 'Camera'],
+  cues: ['Sound cues', '#2DB8A0', 'Add a sound cue at the playhead', 'Cues'],
+};
 function edUndoUI() {
   const u = $('#btnUndo'), r = $('#btnRedo');
   if (u) u.disabled = !S.undo.length || S.recording;
   if (r) r.disabled = !S.redo.length || S.recording;
+}
+function edSelUI() {
+  const n = S.adv ? edAllSel().length : 0;
+  const dup = $('#btnDup'), del = $('#btnDel');
+  if (dup) dup.disabled = !n || S.recording;
+  if (del) { del.disabled = !n || S.recording; del.textContent = n > 1 ? `Delete ${n}` : 'Delete'; }
 }
 function edPushUndo() {
   if (!S.adv) return;
@@ -5011,15 +5263,17 @@ function edRedo() {
   toast('Redone', 1000);
 }
 function edAfterStructural() {
-  if (S.sel && !edFindSel(S.sel)) S.sel = null;
+  S.multi = S.multi.filter((s) => edFindSel(s));
+  if (S.multi.length < 2) S.multi = [];
+  if (S.sel && !edFindSel(S.sel)) S.sel = S.multi.length ? S.multi[S.multi.length - 1] : null;
   rebuildWorld(); edRender(); edInspector(); edUndoUI();
 }
-// all Advanced edits go through here (undo + rebuild)
+// all Advanced edits go through here (undo + rebuild). `hold` keeps one undo step for a whole drag.
 function edEdit(fn, opt = {}) {
   if (!S.adv || S.recording) return;
   const now = performance.now();
   const co = opt.coalesce || null;
-  if (!(co && ED.lastCo === co && now - ED.lastCoT < 1500)) edPushUndo();
+  if (!(co && ED.lastCo === co && (opt.hold || now - ED.lastCoT < 1500))) edPushUndo();
   ED.lastCo = co; ED.lastCoT = now;
   fn();
   if (opt.eew) { edScheduleEEW(opt.eew); edRenderSoon(); needRender = true; return; }
@@ -5041,6 +5295,10 @@ function edRenderSoon() {
   ED.renderQ = true;
   requestAnimationFrame(() => { ED.renderQ = false; edRender(); });
 }
+
+// ---------------------------------------------------------------- selection (one primary + an optional group)
+const selKey = (s) => s.kind + ':' + s.id;
+function parseK(k) { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1) }; }
 function edFindSel(sel) {
   const d = S.adv;
   if (!sel || !d) return null;
@@ -5051,14 +5309,78 @@ function edFindSel(sel) {
   if (sel.kind === 'cue') return d.cues.find((x) => x.id === sel.id) || null;
   return null;
 }
-function edSelect(sel) {
-  S.sel = sel && edFindSel(sel) ? sel : null;
+function edAllSel() {
+  const arr = S.multi.length > 1 ? S.multi : S.sel ? [S.sel] : [];
+  return arr.filter((s) => edFindSel(s));
+}
+function edSelSet() { return new Set(edAllSel().map(selKey)); }
+function edIsSel(ref) { const k = selKey(ref); return edAllSel().some((s) => selKey(s) === k); }
+// ids of the selected boxes, for the outline on the stage
+function edSelItemSet() { const o = new Set(); if (S.adv) for (const s of edAllSel()) if (s.kind === 'item') o.add(s.id); return o; }
+// add = Shift/Ctrl/⌘: toggle this one in or out of the group
+function edSelect(sel, add) {
+  if (sel && !edFindSel(sel)) sel = null;
+  if (add && sel) {
+    const cur = edAllSel(), k = selKey(sel);
+    const has = cur.some((s) => selKey(s) === k);
+    const next = has ? cur.filter((s) => selKey(s) !== k) : [...cur, sel];
+    S.multi = next.length > 1 ? next : [];
+    S.sel = next.length ? (has ? next[next.length - 1] : sel) : null;
+  } else { S.sel = sel; S.multi = []; }
   edRender(); edInspector();
   needRender = true;
 }
+function edSetSel(list) {
+  const seen = new Set(), out = [];
+  for (const s of list) { const k = selKey(s); if (!seen.has(k) && edFindSel(s)) { seen.add(k); out.push(s); } }
+  S.multi = out.length > 1 ? out : [];
+  S.sel = out.length ? out[out.length - 1] : null;
+}
+// update the outlines without rebuilding the timeline (a drag keeps its pointer)
+function edMarkSel() {
+  const set = edSelSet();
+  for (const el of $$('#tlInner [data-k]')) {
+    const on = set.has(el.dataset.k);
+    if (el.classList.contains('tl-label')) el.parentNode.classList.toggle('sel', on);
+    else el.classList.toggle('sel', on);
+  }
+  edSelUI();
+  needRender = true;
+}
+function edSelectAll() {
+  const d = S.adv;
+  if (!d || S.recording) return;
+  edSetSel([...d.items.map((x) => ({ kind: 'item', id: x.id })), ...d.eew.map((x) => ({ kind: 'eew', id: x.id })),
+    ...d.camera.keys.map((x) => ({ kind: 'cam', id: x.id })), ...d.cues.map((x) => ({ kind: 'cue', id: x.id }))]);
+  edRender(); edInspector();
+  needRender = true;
+}
+function edEscape() {
+  if (edCloseMenu()) return true;
+  if (S.mode === 'adv' && S.adv && edAllSel().length) { edSelect(null); return true; }
+  return false;
+}
+const edStartOf = (s) => { const o = edFindSel(s); return !o ? 0 : o.t0 !== undefined ? o.t0 : o.t; };
+function boxColor(it) {
+  const sev = (dd) => (dd.sev === 'custom' ? dd.color : (SEVERITY[dd.sev] || SEVERITY.warning).col);
+  return it.type === 'custom' || it.type === 'banner' || it.type === 'ticker' ? sev(it.data) : BOX_TYPES[it.type].color;
+}
+const eewColor = (r) => (r.kind === 'warning' ? '#D41F2E' : r.kind === 'cancel' ? '#6B7785' : '#F2B000');
+function edNameOf(s, o) {
+  if (s.kind === 'item') return itemTitle(o);
+  if (s.kind === 'event') return `Quake ${evIndex(o.id)} · M${(+o.M).toFixed(1)}`;
+  if (s.kind === 'eew') { const n = S.adv.eew.filter((r) => r.ev === o.ev).sort((a, b) => a.t - b.t).indexOf(o) + 1; return `EEW #${n}${S.adv.events.length > 1 ? ' · ' + evIndex(o.ev) : ''}`; }
+  if (s.kind === 'cam') return 'Camera key';
+  return 'Sound cue · ' + AU.label(o.sound);
+}
+function edColorOf(s, o) { return s.kind === 'item' ? boxColor(o) : s.kind === 'event' ? '#E8101E' : s.kind === 'eew' ? eewColor(o) : s.kind === 'cam' ? '#46A5FF' : '#2DB8A0'; }
+
+// ---------------------------------------------------------------- time ↔ pixels
 const tx = (t) => (t - T_START) * ED.pps;
+function laneT(clientX) { const r = $('#tlInner').getBoundingClientRect(); return T_START + (clientX - r.left - ED.labelW) / ED.pps; }
 function edLabelW() { ED.labelW = window.matchMedia && matchMedia('(max-width: 640px)').matches ? 132 : 184; return ED.labelW; }
 const roundT = (t) => Math.round(t * 20) / 20;
+function fmtT(t) { const a = Math.abs(t), tenth = Math.abs(a * 10 - Math.round(a * 10)) < 1e-6; return (t < -0.004 ? '−' : '') + (tenth ? a.toFixed(1) : a.toFixed(2)) + ' s'; }
 function edFit() {
   if (!S.world) return;
   edLabelW();
@@ -5066,13 +5388,43 @@ function edFit() {
   const wpx = Math.max(300, (sc ? sc.clientWidth : 900) - ED.labelW - 24);
   ED.pps = clamp(wpx / (S.world.tEnd - T_START + 3), 1.5, 240);
   edRender();
+  if (sc) sc.scrollLeft = 0;
 }
-function edZoom(f) {
+// zoom around a point on screen (the pointer for Ctrl+wheel, the middle for the buttons)
+function edZoom(f, clientX) {
   const sc = $('#tlScroll');
-  const tCenter = T_START + (sc.scrollLeft + (sc.clientWidth - ED.labelW) / 2) / ED.pps;
+  if (!sc) return;
+  const r = sc.getBoundingClientRect(), vis = Math.max(40, sc.clientWidth - ED.labelW);
+  const px = clientX === undefined ? vis / 2 : clamp(clientX - r.left - ED.labelW, 0, vis);
+  const tAt = T_START + (sc.scrollLeft + px) / ED.pps;
   ED.pps = clamp(ED.pps * f, 1.5, 240);
   edRender();
-  sc.scrollLeft = Math.max(0, tx(tCenter) - (sc.clientWidth - ED.labelW) / 2);
+  sc.scrollLeft = Math.max(0, tx(tAt) - px);
+}
+
+// ---------------------------------------------------------------- key moments (ruler pills, guide lines, snap targets)
+function edMoments() {
+  const w = S.world, d = S.adv, out = [];
+  const many = w.evs.length > 1;
+  w.evs.forEach((E, i) => {
+    const pre = many ? `E${i + 1} ` : '';
+    const t0 = E.ev.t0;
+    if (E.ph.tDet !== null && E.ph.shaking) out.push({ t: t0 + E.ph.tDet, label: pre + 'Detect', c: '#FFD34D', tip: 'Shaking first detected', src: E.id });
+    const r0 = E.reports[0], fw = E.reports.find((r) => r._firstWarn), fin = E.reports.find((r) => r.final);
+    if (r0) out.push(fw === r0 ? { t: r0.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'First EEW, already a warning', src: r0.id } : { t: r0.t, label: pre + 'EEW', c: '#F2B000', tip: 'First EEW report', src: r0.id });
+    if (fw && fw !== r0) out.push({ t: fw.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'EEW upgraded to a warning', src: fw.id });
+    if (fin && fin !== r0) out.push({ t: fin.t, label: pre + 'Final', c: '#C9D6E3', tip: 'Final EEW report', src: fin.id });
+    if (w.my && E.ph.shaking) {
+      const rr = w.my.resp[i];
+      if (rr && rr.Ipk >= 0.5 && isFinite(rr.tS)) out.push({ t: t0 + rr.tS, label: pre + 'S at you', c: '#4CC38A', tip: 'The S-wave reaches your location', src: E.id });
+    }
+  });
+  for (const it of d.items) {
+    if (it.hidden || (it.type !== 'flash' && it.type !== 'report')) continue;
+    const pre = many && it.ev !== 'auto' ? evIndex(it.ev) + ' ' : '';
+    out.push(it.type === 'flash' ? { t: it.t0, label: pre + 'Flash', c: '#6FA8FF', tip: 'Intensity flash appears', src: it.id } : { t: it.t0, label: pre + 'Report', c: '#46A5FF', tip: 'Intensity report appears', src: it.id });
+  }
+  return out.filter((m) => isFinite(m.t) && m.t >= T_START - 1).sort((a, b) => a.t - b.t);
 }
 
 // ---------------------------------------------------------------- timeline DOM
@@ -5085,23 +5437,38 @@ function itemTitle(it) {
   return BOX_TYPES[it.type].label;
 }
 function evIndex(id) { const i = S.adv.events.findIndex((e) => e.id === id); return i < 0 ? '' : 'E' + (i + 1); }
+const dblWord = () => (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'Double-tap' : 'Double-click');
 function laneRow(cls, labelEl, laneW, sel) {
   const lane = h('div', { class: 'tl-lane', style: `width:${laneW}px` });
   const row = h('div', { class: 'tl-row' + (cls ? ' ' + cls : '') + (sel ? ' sel' : '') }, labelEl, lane);
   return [row, lane];
 }
+function edLabelClick(e, ref) {
+  if (ED.lp.fired) return;
+  const add = e.shiftKey || e.ctrlKey || e.metaKey;
+  // already the only selection: keep the DOM so a double-click can rename
+  if (!add && S.sel && selKey(S.sel) === selKey(ref) && S.multi.length < 2) return;
+  edSelect(ref, add);
+}
 function edRender() {
   if (S.mode !== 'adv' || !S.adv || !S.world) return;
+  if (ED.drag) { ED.pending = true; return; }
+  ED.pending = false;
   edLabelW();
   const inner = $('#tlInner');
   const d = S.adv, w = S.world, tEnd = w.tEnd;
   const laneW = Math.ceil(tx(tEnd + 3));
+  ED.laneW = laneW;
   inner.textContent = '';
   inner.style.width = ED.labelW + laneW + 'px';
-  const sel = S.sel || {};
-  // ruler
+  const selSet = edSelSet();
+  const isSel = (kind, id) => selSet.has(kind + ':' + id);
+  ED.marks = edMoments();
+  // ruler: key moments on top, the time scale below
   {
-    const [row, lane] = laneRow('tl-ruler', h('div', { class: 'tl-label', text: 'TIME' }), laneW);
+    const [row, lane] = laneRow('tl-ruler', h('div', { class: 'tl-label tl-now', id: 'tlNow', title: 'Playhead time' }, fmtT(S.tau)), laneW);
+    lane.dataset.track = 'ruler';
+    lane.title = 'Click or drag to move the playhead';
     const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
     const major = steps.find((s) => s * ED.pps >= 64) || 600;
     const minor = major / (major === 15 || major === 30 ? 3 : major === 2 ? 4 : 5);
@@ -5110,233 +5477,676 @@ function edRender() {
       const lab = isMajor ? (Math.abs(t) >= 60 ? `${t < 0 ? '−' : ''}${Math.floor(Math.abs(t) / 60)}:${String(Math.round(Math.abs(t) % 60)).padStart(2, '0')}` : `${+t.toFixed(1)}s`) : '';
       lane.append(h('div', { class: 'tl-tick' + (isMajor ? '' : ' minor'), style: `left:${tx(t)}px`, text: lab }));
     }
-    lane.addEventListener('pointerdown', (e) => {
-      if (S.recording) return;
-      lane.setPointerCapture(e.pointerId);
-      const at = (ev) => { const r = lane.getBoundingClientRect(); seek(T_START + (ev.clientX - r.left) / ED.pps); };
-      at(e);
-      const mv = (ev) => at(ev);
-      const up = () => { lane.removeEventListener('pointermove', mv); lane.removeEventListener('pointerup', up); lane.removeEventListener('pointercancel', up); };
-      lane.addEventListener('pointermove', mv); lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up);
+    // key moments; ones too close to fit share a tag ("Detect · Warning", or "Detect +2" when even that won't fit)
+    const estW = (txt) => txt.length * 6.6 + 16;
+    const groups = [];
+    for (const m of ED.marks) {
+      const g = groups[groups.length - 1];
+      if (g && tx(m.t) < tx(g[0].t) + estW(g.length > 1 ? `${g[0].label} +${g.length}` : g[0].label) + 4) g.push(m); else groups.push([m]);
+    }
+    groups.forEach((g, gi) => {
+      const x = tx(g[0].t), room = (gi < groups.length - 1 ? tx(groups[gi + 1][0].t) : Infinity) - x - 4;
+      const full = g.map((m) => m.label).join(' · ');
+      const lab = g.length === 1 || estW(full) < room ? full : `${g[0].label} +${g.length - 1}`;
+      lane.append(h('div', { class: 'tl-moment', 'data-t': String(g[0].t), style: `left:${x}px;--c:${g[0].c}`,
+        title: g.map((m) => `${m.label} at ${fmtT(m.t)}: ${m.tip}`).join('\n') + '\nClick to jump there. Right-click the ruler for the full list.' }, lab));
     });
+    lane.append(h('div', { class: 'tl-phead', id: 'tlPhead', style: `left:${tx(S.tau)}px` }));
     inner.append(row);
   }
-  const grp = (title) => { const [row] = laneRow('grp', h('div', { class: 'tl-label', text: title }), laneW); inner.append(row); };
-  // quakes
-  grp('Quakes');
-  d.events.forEach((ev, i) => {
-    const E = w.evMap.get(ev.id);
-    const isSel = sel.kind === 'event' && sel.id === ev.id;
-    const label = h('div', { class: 'tl-label', title: 'Select this quake', onclick: () => edSelect({ kind: 'event', id: ev.id }) },
-      h('span', { class: 'dot', style: '--c:#E8101E' }), h('span', { class: 'nm', text: `M${(+ev.M).toFixed(1)} ${E ? evName(E) : ''}` }),
-      ev.sounds && Object.keys(ev.sounds).length ? h('span', { class: 'tag', title: 'Has its own sounds', text: '♪' }) : null, h('span', { class: 'tag', text: 'E' + (i + 1) }));
-    const [row, lane] = laneRow('', label, laneW, isSel);
-    if (E && E.reports.length) {
-      const last = E.reports[E.reports.length - 1].t;
-      lane.append(h('div', { class: 'tl-span', style: `left:${tx(ev.t0)}px;width:${Math.max(2, tx(last) - tx(ev.t0))}px;background:rgba(232,16,30,0.25)` }));
+  // a track's header row: fold, title, count, ＋ and ⋯. Folded tracks show their contents as ticks.
+  const head = (k, n, minis) => {
+    const [title, col, addLabel, short] = TRACKS[k];
+    const folded = !!ED.collapse[k];
+    const lab = h('div', { class: 'tl-label', title: folded ? 'Unfold this track' : 'Fold this track away', onclick: () => edToggleTrack(k) },
+      h('button', { type: 'button', class: 'tl-fold', 'aria-expanded': String(!folded), 'aria-label': (folded ? 'Unfold ' : 'Fold ') + title, onclick: (e) => { e.stopPropagation(); edToggleTrack(k); } }, folded ? '▸' : '▾'),
+      h('span', { class: 'nm' }, h('span', { class: 'lg', text: title }), h('span', { class: 'sh', text: short })), folded && n ? h('span', { class: 'cnt', title: `${n} on this track`, text: String(n) }) : null,
+      h('button', { type: 'button', class: 'tl-hb', title: addLabel, 'aria-label': addLabel, onclick: (e) => { e.stopPropagation(); edTrackAdd(k, e.currentTarget); } }, '+'),
+      h('button', { type: 'button', class: 'tl-hb', title: 'More options', 'aria-label': title + ' options', 'aria-haspopup': 'menu', onclick: (e) => { e.stopPropagation(); edTrackMenu(k, e.currentTarget); } }, '⋯'));
+    const [row, lane] = laneRow('grp' + (folded ? ' folded' : ''), lab, laneW);
+    row.dataset.trackHead = k;
+    lane.dataset.track = k;
+    if (folded) {
+      for (const [t, dur, c] of minis) lane.append(h('i', { class: 'tl-mini', style: `left:${tx(t)}px;--c:${c || col}` + (dur ? `;width:${Math.max(3, dur * ED.pps)}px` : '') }));
+      if (!minis.length) lane.append(h('span', { class: 'tl-fold-note', text: 'Empty' }));
     }
-    const mk = h('div', { class: 'tl-mk dia dark' + (isSel ? ' sel' : ''), style: `left:${tx(ev.t0)}px;--c:#E8101E`, title: `Quake E${i + 1} origin · drag to move it with its reports and boxes` });
-    edDraggable(mk, { kind: 'event', id: ev.id }, () => ev.t0, (t, t00) => {
-      const dt = roundT(t) - ev.t0;
-      if (!dt) return;
-      ev.t0 = roundT(t);
-      for (const r of d.eew) if (r.ev === ev.id) r.t = roundT(r.t + dt);
-      for (const it of d.items) if (it.ev === ev.id) { it.t0 = roundT(it.t0 + dt); if (it.t1 !== null) it.t1 = roundT(it.t1 + dt); }
-    });
-    lane.append(mk);
     inner.append(row);
-  });
+    return folded;
+  };
+  // quakes
+  if (!head('quakes', d.events.length, d.events.map((ev) => [ev.t0, 0, '#E8101E']))) {
+    d.events.forEach((ev, i) => {
+      const E = w.evMap.get(ev.id);
+      const ref = { kind: 'event', id: ev.id }, sel = isSel('event', ev.id);
+      const label = h('div', { class: 'tl-label', 'data-k': 'event:' + ev.id, title: 'Select this quake', onclick: (e) => edLabelClick(e, ref) },
+        h('span', { class: 'dot', style: '--c:#E8101E' }), h('span', { class: 'nm', text: `M${(+ev.M).toFixed(1)} ${E ? evName(E) : ''}` }),
+        ev.sounds && Object.keys(ev.sounds).length ? h('span', { class: 'tag', title: 'Has its own sounds', text: '♪' }) : null, h('span', { class: 'tag', text: 'E' + (i + 1) }));
+      const [row, lane] = laneRow('', label, laneW, sel);
+      lane.dataset.track = 'quakes';
+      if (E && E.reports.length) {
+        const last = E.reports[E.reports.length - 1].t;
+        lane.append(h('div', { class: 'tl-span', style: `left:${tx(ev.t0)}px;width:${Math.max(2, tx(last) - tx(ev.t0))}px;background:rgba(232,16,30,0.25)` }));
+      }
+      lane.append(h('div', { class: 'tl-mk dia dark' + (sel ? ' sel' : ''), 'data-k': 'event:' + ev.id, style: `left:${tx(ev.t0)}px;--c:#E8101E`, title: `Quake E${i + 1} origin at ${fmtT(ev.t0)}. Drag to move it with its reports and boxes.` }));
+      inner.append(row);
+    });
+  }
   // EEW reports
-  grp('EEW reports');
-  d.events.forEach((ev, i) => {
-    const E = w.evMap.get(ev.id);
-    const label = h('div', { class: 'tl-label', onclick: () => edSelect({ kind: 'event', id: ev.id }) },
-      h('span', { class: 'dot', style: '--c:#F2B000' }), h('span', { class: 'nm', text: ev.eewAuto ? 'Automatic' : 'Hand-made' }), h('span', { class: 'tag', text: 'E' + (i + 1) }));
-    const [row, lane] = laneRow('', label, laneW, false);
-    const reps = d.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t);
-    if (!reps.length) lane.append(h('div', { class: 'tl-empty', style: `position:absolute;left:${tx(ev.t0) + 8}px;top:2px;padding:6px`, text: ev.shaking === false ? 'No shaking, so no EEW.' : 'No reports. Add one with ＋ EEW report.' }));
-    reps.forEach((r, k) => {
-      const isSel = sel.kind === 'eew' && sel.id === r.id;
-      const col = r.kind === 'warning' ? '#D41F2E' : r.kind === 'cancel' ? '#6B7785' : '#F2B000';
-      // crowded markers shrink to dots so they stay grabbable
-      const gapL = k > 0 ? (r.t - reps[k - 1].t) * ED.pps : 99, gapR = k < reps.length - 1 ? (reps[k + 1].t - r.t) * ED.pps : 99;
-      const tight = Math.min(gapL, gapR) < 26 && !isSel && !r.final && k > 0;
-      const mk = h('div', { class: 'tl-mk' + (r.kind !== 'forecast' ? ' dark' : '') + (r.final ? ' final' : '') + (isSel ? ' sel' : ''),
-        style: `left:${tx(r.t)}px;--c:${col}` + (tight ? ';min-width:12px;width:12px;height:12px;top:12px;padding:0;font-size:0' : ''),
-        title: `#${k + 1} ${r.kind} · M${(+r.M).toFixed(1)} · ${r.depth} km${r.final ? ' · final' : ''}`, text: String(k + 1) });
-      edDraggable(mk, { kind: 'eew', id: r.id }, () => r.t, (t) => { r.t = roundT(Math.max(ev.t0, t)); ev.eewAuto = false; });
-      lane.append(mk);
+  if (!head('eew', d.eew.length, d.eew.map((r) => [r.t, 0, eewColor(r)]))) {
+    d.events.forEach((ev, i) => {
+      const label = h('div', { class: 'tl-label', 'data-k': 'event:' + ev.id, title: 'Select this quake', onclick: (e) => edLabelClick(e, { kind: 'event', id: ev.id }) },
+        h('span', { class: 'dot', style: '--c:#F2B000' }), h('span', { class: 'nm', text: ev.eewAuto ? 'Automatic' : 'Hand-made' }), h('span', { class: 'tag', text: 'E' + (i + 1) }));
+      const [row, lane] = laneRow('', label, laneW, isSel('event', ev.id));
+      lane.dataset.track = 'eew'; lane.dataset.ev = ev.id;
+      const reps = d.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t);
+      if (!reps.length) lane.append(h('div', { class: 'tl-empty', style: `left:${tx(ev.t0) + 8}px`, text: ev.shaking === false ? `No shaking, so no EEW. ${dblWord()} to add a report anyway.` : `No reports. ${dblWord()} here to add one.` }));
+      reps.forEach((r, k) => {
+        const sel = isSel('eew', r.id);
+        // crowded markers shrink to dots so they stay grabbable
+        const gapL = k > 0 ? (r.t - reps[k - 1].t) * ED.pps : 99, gapR = k < reps.length - 1 ? (reps[k + 1].t - r.t) * ED.pps : 99;
+        const tight = Math.min(gapL, gapR) < 26 && !sel && !r.final && k > 0;
+        lane.append(h('div', { class: 'tl-mk' + (r.kind !== 'forecast' ? ' dark' : '') + (r.final ? ' final' : '') + (sel ? ' sel' : '') + (tight ? ' tight' : ''), 'data-k': 'eew:' + r.id,
+          style: `left:${tx(r.t)}px;--c:${eewColor(r)}`, title: `#${k + 1} ${r.kind} · M${(+r.M).toFixed(1)} · ${r.depth} km${r.final ? ' · final' : ''} · ${fmtT(r.t)}`, text: String(k + 1) }));
+      });
+      inner.append(row);
     });
-    inner.append(row);
-  });
+  }
   // boxes
-  grp('Boxes');
-  if (!d.items.length) { const [row, lane] = laneRow('', h('div', { class: 'tl-label', text: 'No boxes' }), laneW); lane.append(h('div', { class: 'tl-empty', text: 'Add one with ＋ Add box.' })); inner.append(row); }
-  for (const it of d.items) {
-    const T = BOX_TYPES[it.type];
-    const isSel = sel.kind === 'item' && sel.id === it.id;
-    const eye = h('button', { type: 'button', class: 'eye', 'aria-label': it.hidden ? 'Show this box' : 'Hide this box', title: it.hidden ? 'Hidden. Click to show.' : 'Hide' });
-    eye.innerHTML = it.hidden ? EYE_OFF : EYE;
-    eye.addEventListener('click', (e) => { e.stopPropagation(); edEdit(() => { it.hidden = !it.hidden; }, { structural: true }); });
-    const col = it.type === 'custom' ? (it.data.sev === 'custom' ? it.data.color : (SEVERITY[it.data.sev] || SEVERITY.warning).col) : it.type === 'banner' || it.type === 'ticker' ? (it.data.sev === 'custom' ? it.data.color : (SEVERITY[it.data.sev] || SEVERITY.warning).col) : T.color;
-    const label = h('div', { class: 'tl-label', onclick: () => edSelect({ kind: 'item', id: it.id }) },
-      h('span', { class: 'dot', style: `--c:${col}` }), h('span', { class: 'nm', text: itemTitle(it) }), h('span', { class: 'tag', text: it.ev === 'auto' ? 'auto' : evIndex(it.ev) }), eye);
-    const [row, lane] = laneRow('', label, laneW, isSel);
-    const x0 = tx(it.t0), x1 = it.t1 === null ? laneW : tx(it.t1);
-    const light = lumOf(hexRgb(col)) > 0.62;
-    const bar = h('div', { class: 'tl-bar' + (light ? ' light' : '') + (it.t1 === null ? ' open' : '') + (it.hidden ? ' off' : '') + (isSel ? ' sel' : ''),
-      style: `left:${x0}px;width:${Math.max(8, x1 - x0)}px;--c:${col}`, title: `${itemTitle(it)} · ${it.t0.toFixed(1)} s → ${it.t1 === null ? 'end' : it.t1.toFixed(1) + ' s'}` },
-      h('span', { text: itemTitle(it) }), h('div', { class: 'h l' }), it.t1 === null ? null : h('div', { class: 'h r' }));
-    edBarDrag(bar, it);
-    lane.append(bar);
-    inner.append(row);
+  if (!head('boxes', d.items.length, d.items.map((it) => [it.t0, (it.t1 ?? tEnd) - it.t0, boxColor(it)]))) {
+    if (!d.items.length) {
+      const [row, lane] = laneRow('', h('div', { class: 'tl-label', text: 'No boxes' }), laneW);
+      lane.dataset.track = 'boxes';
+      lane.append(h('div', { class: 'tl-empty', style: 'left:8px', text: `${dblWord()} anywhere here to add a box at that time.` }));
+      inner.append(row);
+    }
+    for (const it of d.items) {
+      const ref = { kind: 'item', id: it.id }, sel = isSel('item', it.id);
+      const eye = h('button', { type: 'button', class: 'eye', 'aria-label': it.hidden ? 'Show this box' : 'Hide this box', title: it.hidden ? 'Hidden. Click to show.' : 'Hide' });
+      eye.innerHTML = it.hidden ? EYE_OFF : EYE;
+      eye.addEventListener('click', (e) => { e.stopPropagation(); edEdit(() => { it.hidden = !it.hidden; }, { structural: true }); });
+      const col = boxColor(it);
+      const label = h('div', { class: 'tl-label', 'data-k': 'item:' + it.id, title: 'Click to select · double-click to rename', onclick: (e) => edLabelClick(e, ref), ondblclick: (e) => { e.stopPropagation(); edRenameBox(it, label); } },
+        h('span', { class: 'dot', style: `--c:${col}` }), h('span', { class: 'nm', text: itemTitle(it) }), h('span', { class: 'tag', text: it.ev === 'auto' ? 'auto' : evIndex(it.ev) }), eye);
+      const [row, lane] = laneRow('', label, laneW, sel);
+      lane.dataset.track = 'boxes';
+      const x0 = tx(it.t0), x1 = it.t1 === null ? laneW : tx(it.t1);
+      const light = lumOf(hexRgb(col)) > 0.62;
+      lane.append(h('div', { class: 'tl-bar' + (light ? ' light' : '') + (it.t1 === null ? ' open' : '') + (it.hidden ? ' off' : '') + (sel ? ' sel' : ''), 'data-k': 'item:' + it.id,
+        style: `left:${x0}px;width:${Math.max(8, x1 - x0)}px;--c:${col}`, title: `${itemTitle(it)} · ${fmtT(it.t0)} → ${it.t1 === null ? 'stays on' : fmtT(it.t1)}` },
+        h('span', { text: itemTitle(it) }), h('div', { class: 'h l', title: 'Drag to change when it appears' }), it.t1 === null ? null : h('div', { class: 'h r', title: 'Drag to change when it goes away' })));
+      inner.append(row);
+    }
   }
   // camera
-  grp('Camera');
-  {
+  if (!head('cam', d.camera.keys.length, d.camera.keys.map((k) => [k.t, k.dur, '#46A5FF']))) {
     const mode = d.camera.mode;
-    const label = h('div', { class: 'tl-label', onclick: () => edSelect(null) }, h('span', { class: 'dot', style: '--c:#46A5FF' }),
+    const label = h('div', { class: 'tl-label', title: 'Camera mode: ⋯ on the Camera row, or the Scenario panel', onclick: () => edSelect(null) }, h('span', { class: 'dot', style: '--c:#46A5FF' }),
       h('span', { class: 'nm', text: mode === 'keys' ? 'Keyframes' : mode === 'off' ? 'Off (free map)' : 'Auto camera' }));
     const [row, lane] = laneRow('', label, laneW, false);
-    if (mode !== 'keys' && !d.camera.keys.length) lane.append(h('div', { class: 'tl-empty', style: 'position:absolute;left:8px;top:2px;padding:6px', text: mode === 'off' ? 'The map stays where you put it.' : 'Follows the quake by itself. Add a camera key to direct it.' }));
+    lane.dataset.track = 'cam';
+    if (!d.camera.keys.length) lane.append(h('div', { class: 'tl-empty', style: 'left:8px', text: mode === 'off' ? `The map stays where you put it. ${dblWord()} to add a camera key.` : `Follows the quake by itself. ${dblWord()} here to direct it with a camera key.` }));
     for (const k of d.camera.keys) {
-      const isSel = sel.kind === 'cam' && sel.id === k.id;
+      const sel = isSel('cam', k.id);
       if (k.dur > 0) lane.append(h('div', { class: 'tl-span', style: `left:${tx(k.t)}px;width:${Math.max(2, k.dur * ED.pps)}px;opacity:${mode === 'keys' ? 1 : 0.35}` }));
-      const mk = h('div', { class: 'tl-mk dia dark' + (isSel ? ' sel' : ''), style: `left:${tx(k.t)}px;--c:#46A5FF;opacity:${mode === 'keys' ? 1 : 0.45}`, title: `Camera → ${k.target} · ${k.dur}s` });
-      edDraggable(mk, { kind: 'cam', id: k.id }, () => k.t, (t) => { k.t = roundT(t); });
-      lane.append(mk);
+      lane.append(h('div', { class: 'tl-mk dia dark' + (sel ? ' sel' : ''), 'data-k': 'cam:' + k.id, style: `left:${tx(k.t)}px;--c:#46A5FF;opacity:${mode === 'keys' ? 1 : 0.45}`, title: `Camera → ${k.target} · ${k.dur}s · ${fmtT(k.t)}` }));
     }
     inner.append(row);
   }
-  // sounds
-  grp('Sound cues');
-  {
+  // sound cues
+  if (!head('cues', d.cues.length, d.cues.map((c) => [c.t, 0, '#2DB8A0']))) {
     const label = h('div', { class: 'tl-label', onclick: () => edSelect(null) }, h('span', { class: 'dot', style: '--c:#2DB8A0' }), h('span', { class: 'nm', text: d.cues.length ? `${d.cues.length} cue${d.cues.length > 1 ? 's' : ''}` : 'No cues' }));
     const [row, lane] = laneRow('', label, laneW, false);
+    lane.dataset.track = 'cues';
+    if (!d.cues.length) lane.append(h('div', { class: 'tl-empty', style: 'left:8px', text: `${dblWord()} here to play a sound at that moment.` }));
     for (const cu of d.cues) {
-      const isSel = sel.kind === 'cue' && sel.id === cu.id;
-      const mk = h('div', { class: 'tl-mk dark' + (isSel ? ' sel' : ''), style: `left:${tx(cu.t)}px;--c:#2DB8A0`, title: AU.label(cu.sound), text: '♪' });
-      edDraggable(mk, { kind: 'cue', id: cu.id }, () => cu.t, (t) => { cu.t = roundT(t); });
-      lane.append(mk);
+      const sel = isSel('cue', cu.id);
+      lane.append(h('div', { class: 'tl-mk dark' + (sel ? ' sel' : ''), 'data-k': 'cue:' + cu.id, style: `left:${tx(cu.t)}px;--c:#2DB8A0`, title: `${AU.label(cu.sound)} · ${fmtT(cu.t)}`, text: '♪' }));
     }
     inner.append(row);
   }
+  // guide lines through every row at the key moments (behind the bars), then the playhead
+  inner.prepend(...ED.marks.map((m) => h('div', { class: 'tl-guide', style: `left:${ED.labelW + tx(m.t)}px;--c:${m.c}` })));
   inner.append(h('div', { class: 'tl-ph', id: 'tlPh', style: `left:${ED.labelW + tx(S.tau)}px` }));
-  edUndoUI();
+  edUndoUI(); edSelUI();
 }
 function edPlayhead() {
   const ph = $('#tlPh');
   if (!ph) return;
   const x = tx(S.tau);
   ph.style.left = ED.labelW + x + 'px';
-  if (S.state === 'playing') {
+  const hd = $('#tlPhead');
+  if (hd) hd.style.left = x + 'px';
+  const nw = $('#tlNow');
+  if (nw) { const s = fmtT(S.tau); if (nw.textContent !== s) nw.textContent = s; }
+  if (S.state === 'playing' && !ED.drag) {
     const sc = $('#tlScroll');
     const vis0 = sc.scrollLeft, vis1 = sc.scrollLeft + sc.clientWidth - ED.labelW;
     if (x < vis0 || x > vis1 - 30) sc.scrollLeft = Math.max(0, x - 80);
   }
 }
-// snapping candidates in seconds
-function snapT(t, exceptId) {
-  if (!$('#snapOn').checked) return roundT(t);
+function edToggleTrack(k) {
+  ED.collapse[k] = !ED.collapse[k];
+  try { localStorage.setItem('quaker.v2.tlcollapse', JSON.stringify(ED.collapse)); } catch (e) { /* storage off */ }
+  edRender();
+}
+// a free box was dragged around on the stage
+function edAfterDrag() { edInspector(); }
+// move the bars and markers to their current times without rebuilding (used while dragging)
+function edReposition() {
+  for (const el of $$('#tlInner .tl-lane [data-k]')) {
+    const o = edFindSel(parseK(el.dataset.k));
+    if (!o) continue;
+    if (el.classList.contains('tl-bar')) {
+      const x0 = tx(o.t0), x1 = o.t1 === null ? ED.laneW : tx(o.t1);
+      el.style.left = x0 + 'px'; el.style.width = Math.max(8, x1 - x0) + 'px';
+    } else el.style.left = tx(o.t0 !== undefined ? o.t0 : o.t) + 'px';
+  }
+}
+
+// ---------------------------------------------------------------- snapping
+function snapCands(except) {
+  const d = S.adv, w = S.world, out = [];
+  const many = w.evs.length > 1;
+  // key moments first, so they win ties (an EEW report that is also "Final" snaps as Final)
+  for (const m of ED.marks) if (!except.has(m.src)) out.push([m.t, m.label]);
+  for (const E of w.evs) for (const r of E.reports) if (!except.has(r.id)) out.push([r.t, `EEW #${r._n}${many ? ' ' + evIndex(r.ev) : ''}`]);
+  for (const it of d.items) if (!except.has(it.id)) { out.push([it.t0, itemTitle(it) + ' start']); if (it.t1 !== null) out.push([it.t1, itemTitle(it) + ' end']); }
+  d.events.forEach((ev, i) => { if (!except.has(ev.id)) out.push([ev.t0, `E${i + 1} origin`]); });
+  for (const k of d.camera.keys) if (!except.has(k.id)) out.push([k.t, 'Camera key']);
+  for (const c of d.cues) if (!except.has(c.id)) out.push([c.t, 'Sound cue']);
+  out.push([S.tau, 'Playhead']);
+  return out;
+}
+// Snap to anything nearby (8 px). Holding Alt flips the Snap checkbox for this drag.
+function snapT(t, except = new Set(), alt = false) {
+  const on = !!($('#snapOn') && $('#snapOn').checked) !== !!alt;
+  if (!on) return { t: roundT(t), hit: null };
   const tol = 8 / ED.pps;
   let best = null, bd = tol;
-  const consider = (c) => { const dd = Math.abs(c - t); if (dd < bd) { bd = dd; best = c; } };
-  const d = S.adv;
-  for (const r of d.eew) if (r.id !== exceptId) consider(r.t);
-  for (const it of d.items) if (it.id !== exceptId) { consider(it.t0); if (it.t1 !== null) consider(it.t1); }
-  for (const ev of d.events) if (ev.id !== exceptId) consider(ev.t0);
-  consider(S.tau);
-  if (best !== null) return roundT(best);
-  return Math.round(t * 10) / 10;
+  for (const [c, label] of snapCands(except)) { const dd = Math.abs(c - t); if (dd < bd) { bd = dd; best = { t: c, label }; } }
+  if (best) return { t: roundT(best.t), hit: best };
+  return { t: Math.round(t * 10) / 10, hit: null };
 }
-function edDraggable(el, sel, getT, setT) {
-  el.addEventListener('pointerdown', (e) => {
-    if (S.recording) return;
-    e.preventDefault(); e.stopPropagation();
-    el.setPointerCapture(e.pointerId);
-    const t00 = getT(), x00 = e.clientX;
-    let movedT = false;
-    if (!S.sel || S.sel.kind !== sel.kind || S.sel.id !== sel.id) { S.sel = sel; edInspector(); needRender = true; }
-    const mv = (ev) => {
-      const dx = ev.clientX - x00;
-      if (!movedT && Math.abs(dx) < 3) return;
-      movedT = true;
-      const t = snapT(t00 + dx / ED.pps, sel.id);
-      edEdit(() => setT(t, t00), { coalesce: 'tl:' + sel.id, quiet: true });
-      el.style.left = tx(getT()) + 'px';
-    };
-    const up = () => {
-      el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
-      edRender(); edInspector();
-    };
-    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  });
+function edShowSnap(hit) {
+  let g = $('#tlSnap');
+  if (!hit) { if (g) g.hidden = true; return; }
+  if (!g) { g = h('div', { class: 'tl-snapline', id: 'tlSnap' }); $('#tlInner').append(g); }
+  g.hidden = false;
+  g.style.left = ED.labelW + tx(hit.t) + 'px';
 }
-function edBarDrag(bar, it) {
-  bar.addEventListener('pointerdown', (e) => {
-    if (S.recording) return;
-    e.preventDefault();
-    bar.setPointerCapture(e.pointerId);
-    const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'm';
-    const a0 = it.t0, b0 = it.t1, x00 = e.clientX;
-    let movedT = false;
-    if (!S.sel || S.sel.kind !== 'item' || S.sel.id !== it.id) { S.sel = { kind: 'item', id: it.id }; edInspector(); needRender = true; for (const b of $$('.tl-bar.sel')) b.classList.remove('sel'); bar.classList.add('sel'); }
-    bar.style.cursor = mode === 'm' ? 'grabbing' : 'ew-resize';
-    const mv = (ev) => {
-      const dx = ev.clientX - x00;
-      if (!movedT && Math.abs(dx) < 3) return;
-      movedT = true;
-      const dt = dx / ED.pps;
-      edEdit(() => {
-        if (mode === 'm') {
-          const n0 = snapT(a0 + dt, it.id);
-          it.t0 = n0;
-          if (b0 !== null) it.t1 = roundT(n0 + (b0 - a0));
-        } else if (mode === 'l') it.t0 = Math.min(snapT(a0 + dt, it.id), b0 !== null ? b0 - 0.2 : Infinity);
-        else it.t1 = Math.max(snapT(b0 + dt, it.id), it.t0 + 0.2);
-      }, { coalesce: 'bar:' + it.id + mode, quiet: true });
-      const x0 = tx(it.t0), lw = parseFloat(bar.parentNode.style.width), x1 = it.t1 === null ? lw : tx(it.t1);
-      bar.style.left = x0 + 'px'; bar.style.width = Math.max(8, x1 - x0) + 'px';
-    };
-    const up = () => {
-      bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
-      bar.style.cursor = '';
-      edRender(); edInspector();
-    };
-    bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
-  });
+function edFloat(x, y, text) {
+  const f = $('#tlFloat');
+  if (!f) return;
+  if (x === null) { f.hidden = true; return; }
+  f.textContent = text; f.hidden = false;
+  const w = f.offsetWidth;
+  f.style.left = clamp(x - w / 2, 6, Math.max(6, innerWidth - w - 6)) + 'px';
+  f.style.top = Math.max(6, y - 34) + 'px';
 }
-function edAfterDrag() { edInspector(); }
+// scroll the timeline while a drag sits near its left or right edge
+function edAutoScroll(clientX, cb) {
+  const A = ED.auto;
+  if (clientX === null) { A.v = 0; A.cb = null; if (A.raf) cancelAnimationFrame(A.raf); A.raf = 0; return; }
+  const sc = $('#tlScroll'), r = sc.getBoundingClientRect();
+  const lo = r.left + ED.labelW + 24, hi = r.right - 28;
+  A.v = clientX > hi ? Math.min(22, (clientX - hi) / 2 + 3) : clientX < lo ? -Math.min(22, (lo - clientX) / 2 + 3) : 0;
+  A.cb = cb;
+  if (A.v && !A.raf) {
+    const step = () => {
+      if (!A.v) { A.raf = 0; return; }
+      const before = sc.scrollLeft;
+      sc.scrollLeft = before + A.v;
+      if (sc.scrollLeft !== before && A.cb) A.cb();
+      A.raf = requestAnimationFrame(step);
+    };
+    A.raf = requestAnimationFrame(step);
+  }
+}
 
-// ---------------------------------------------------------------- add / delete / duplicate
+// ---------------------------------------------------------------- moving things (one or a group)
+// what moves when these are dragged: quakes bring their own reports and boxes along
+function edMovePlan(refs) {
+  const d = S.adv;
+  const evs = new Set(refs.filter((s) => s.kind === 'event').map((s) => s.id));
+  const ents = [];
+  for (const s of refs) {
+    const o = edFindSel(s);
+    if (!o) continue;
+    if (s.kind === 'event') {
+      ents.push({ o, k: 't0', v: o.t0 });
+      for (const r of d.eew) if (r.ev === o.id) ents.push({ o: r, k: 't', v: r.t });
+      for (const it of d.items) if (it.ev === o.id) { ents.push({ o: it, k: 't0', v: it.t0 }); if (it.t1 !== null) ents.push({ o: it, k: 't1', v: it.t1 }); }
+    } else if (s.kind === 'item') {
+      if (evs.has(o.ev)) continue;
+      ents.push({ o, k: 't0', v: o.t0 });
+      if (o.t1 !== null) ents.push({ o, k: 't1', v: o.t1 });
+    } else if (s.kind === 'eew') {
+      if (!evs.has(o.ev)) ents.push({ o, k: 't', v: o.t, ev: o.ev });
+    } else ents.push({ o, k: 't', v: o.t });
+  }
+  return { ents, ids: new Set(ents.map((x) => x.o.id)), n: refs.length };
+}
+function edApplyPlan(plan, dt) {
+  const d = S.adv;
+  for (const x of plan.ents) {
+    let v = roundT(x.v + dt);
+    if (x.ev) { const ev = d.events.find((q) => q.id === x.ev); if (ev) { v = Math.max(ev.t0, v); ev.eewAuto = false; } }
+    x.o[x.k] = v;
+  }
+  if (plan.ents.some((x) => x.ev)) d.eew.sort((a, b) => a.t - b.t);
+}
+function edDragText(o, mode, plan, sn, dt) {
+  let s;
+  if (mode === 'm' && plan.n > 1) s = `${dt < 0 ? '−' : '+'}${fmtT(Math.abs(dt))} · ${plan.n} items`;
+  else if (o.t1 !== undefined) s = `${fmtT(o.t0)} → ${o.t1 === null ? 'end' : fmtT(o.t1)}`;
+  else s = fmtT(o.t0 !== undefined ? o.t0 : o.t);
+  return sn && sn.hit ? `${s} · snapped to ${sn.hit.label}` : s;
+}
+function edGesture(el, e, move, up) {
+  try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  let done = false;
+  const mv = (ev) => move(ev);
+  const fin = (ev) => {
+    if (done) return;
+    done = true;
+    el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', fin); el.removeEventListener('pointercancel', fin); el.removeEventListener('lostpointercapture', fin);
+    up(ev, ev.type !== 'pointerup');
+  };
+  el.addEventListener('pointermove', mv); el.addEventListener('pointerup', fin); el.addEventListener('pointercancel', fin); el.addEventListener('lostpointercapture', fin);
+}
+// touch: holding still opens the same menu a right-click does
+function edLongPress(e, target) {
+  clearTimeout(ED.lp.timer);
+  const x = e.clientX, y = e.clientY, id = e.pointerId;
+  const stop = () => { clearTimeout(ED.lp.timer); window.removeEventListener('pointermove', mv, true); window.removeEventListener('pointerup', stop, true); window.removeEventListener('pointercancel', stop, true); };
+  const mv = (ev) => { if (ev.pointerId === id && Math.hypot(ev.clientX - x, ev.clientY - y) > 9) stop(); };
+  window.addEventListener('pointermove', mv, true); window.addEventListener('pointerup', stop, true); window.addEventListener('pointercancel', stop, true);
+  ED.lp.timer = setTimeout(() => {
+    stop();
+    ED.lp.fired = true;
+    if (ED.drag) ED.drag.cancel();
+    edContext({ target, clientX: x, clientY: y });
+  }, 550);
+}
+function edPointerDown(e) {
+  if (!S.adv || S.recording) return;
+  ED.lp.fired = false;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  ctxClose();
+  const tg = e.target;
+  if (tg.closest('button, input, select, textarea')) return;
+  if (tg.closest('.tl-label')) { if (e.pointerType !== 'mouse') edLongPress(e, tg); return; }
+  const pill = tg.closest('.tl-moment');
+  if (pill) { e.preventDefault(); seek(+pill.dataset.t); return; }
+  if (tg.closest('.tl-ruler')) { edScrub(e, tg.closest('.tl-lane') || tg); return; }
+  const el = tg.closest('.tl-lane [data-k]');
+  if (el) { edItemDown(e, el); return; }
+  const lane = tg.closest('.tl-lane');
+  if (lane) edLaneDown(e, lane);
+}
+function edScrub(e, el) {
+  e.preventDefault();
+  seek(laneT(e.clientX));
+  edGesture(el, e, (ev) => seek(laneT(ev.clientX)), () => {});
+}
+function edItemDown(e, el) {
+  const ref = parseK(el.dataset.k);
+  const o = edFindSel(ref);
+  if (!o) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.shiftKey || e.ctrlKey || e.metaKey) { edSelect(ref, true); return; }
+  if (!edIsSel(ref)) S.multi = [];
+  S.sel = ref;
+  edMarkSel(); edInspector();
+  const bar = el.classList.contains('tl-bar');
+  const mode = bar && e.target.classList.contains('l') ? 'l' : bar && e.target.classList.contains('r') ? 'r' : 'm';
+  const plan = edMovePlan(mode === 'm' ? edAllSel() : [ref]);
+  const anchor = o.t0 !== undefined ? o.t0 : o.t;
+  const a0 = o.t0, b0 = o.t1;
+  const tp0 = laneT(e.clientX), key = 'drag' + (++ED.gid);
+  let moved = false, lastX = e.clientX, alt = e.altKey, dead = false;
+  if (bar) el.style.cursor = mode === 'm' ? 'grabbing' : 'ew-resize';
+  const apply = () => {
+    const traw = laneT(lastX) - tp0;
+    if (!moved) { if (Math.abs(traw) * ED.pps < 3) return; moved = true; clearTimeout(ED.lp.timer); }
+    let sn, dt = 0;
+    if (mode === 'm') {
+      sn = snapT(anchor + traw, plan.ids, alt);
+      dt = sn.t - anchor;
+      edEdit(() => edApplyPlan(plan, dt), { coalesce: key, hold: true, quiet: true });
+    } else if (mode === 'l') {
+      sn = snapT(a0 + traw, plan.ids, alt);
+      edEdit(() => { o.t0 = Math.min(sn.t, b0 !== null ? roundT(b0 - 0.2) : Infinity); }, { coalesce: key, hold: true, quiet: true });
+    } else {
+      sn = snapT(b0 + traw, plan.ids, alt);
+      edEdit(() => { o.t1 = Math.max(sn.t, roundT(o.t0 + 0.2)); }, { coalesce: key, hold: true, quiet: true });
+    }
+    edReposition();
+    edShowSnap(sn.hit);
+    edFloat(lastX, el.getBoundingClientRect().top, edDragText(o, mode, plan, sn, dt));
+  };
+  ED.drag = { cancel: () => { dead = true; } };
+  edGesture(el, e, (ev) => {
+    if (dead) return;
+    lastX = ev.clientX; alt = ev.altKey;
+    apply();
+    if (moved) edAutoScroll(ev.clientX, () => { if (!dead) apply(); });
+  }, () => {
+    edAutoScroll(null);
+    ED.drag = null;
+    edFloat(null); edShowSnap(null);
+    if (bar) el.style.cursor = '';
+    edRender(); edInspector();
+  });
+  if (e.pointerType !== 'mouse') edLongPress(e, el);
+}
+// empty space: a click moves the playhead and clears the selection, a drag draws a selection box
+function edLaneDown(e, lane) {
+  const add = e.shiftKey || e.ctrlKey || e.metaKey;
+  if (e.pointerType !== 'mouse') {
+    // touch: tap = seek, hold = menu, swipe = the browser scrolls the timeline
+    const x = e.clientX, y = e.clientY;
+    edLongPress(e, lane);
+    const up = (ev) => {
+      lane.removeEventListener('pointerup', up); lane.removeEventListener('pointercancel', up);
+      if (ev.type !== 'pointerup' || ED.lp.fired || Math.hypot(ev.clientX - x, ev.clientY - y) >= 9) return;
+      // our own double-tap, since phones don't all send dblclick
+      const now = performance.now(), lt = ED.lastTap;
+      if (lt && now - lt.t < 380 && Math.hypot(ev.clientX - lt.x, ev.clientY - lt.y) < 26) { ED.lastTap = null; ED.dblT = now; edDblAt(lane, ev.clientX, ev.clientY); return; }
+      ED.lastTap = { t: now, x: ev.clientX, y: ev.clientY };
+      edLaneTap(ev.clientX, add);
+    };
+    lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up);
+    return;
+  }
+  e.preventDefault();
+  const inner = $('#tlInner');
+  const r0 = inner.getBoundingClientRect();
+  const sx = e.clientX - r0.left, sy = e.clientY - r0.top;
+  const base = add ? edAllSel() : [];
+  let box = null, lastX = e.clientX, lastY = e.clientY;
+  const update = () => {
+    const r = inner.getBoundingClientRect();
+    const cx = lastX - r.left, cy = lastY - r.top;
+    if (!box) { if (Math.hypot(cx - sx, cy - sy) < 5) return; box = h('div', { class: 'tl-marq' }); inner.append(box); }
+    const x0 = Math.max(ED.labelW, Math.min(sx, cx)), y0 = Math.min(sy, cy), x1 = Math.max(sx, cx), y1 = Math.max(sy, cy);
+    Object.assign(box.style, { left: x0 + 'px', top: y0 + 'px', width: Math.max(0, x1 - x0) + 'px', height: y1 - y0 + 'px' });
+    edSetSel([...base, ...edMarqHits(x0, y0, x1, y1)]);
+    edMarkSel();
+  };
+  ED.drag = { cancel: () => {} };
+  edGesture(lane, e, (ev) => { lastX = ev.clientX; lastY = ev.clientY; update(); if (box) edAutoScroll(ev.clientX, update); }, (ev, cancelled) => {
+    edAutoScroll(null);
+    ED.drag = null;
+    if (box) { box.remove(); edRender(); edInspector(); } else if (!cancelled) edLaneTap(e.clientX, add);
+    else if (ED.pending) edRender();
+  });
+}
+function edLaneTap(clientX, add) {
+  seek(laneT(clientX));
+  if (!add && edAllSel().length) edSelect(null);
+}
+function edMarqHits(x0, y0, x1, y1) {
+  const inner = $('#tlInner'), r = inner.getBoundingClientRect();
+  const out = [];
+  for (const el of $$('.tl-lane [data-k]', inner)) {
+    const b = el.getBoundingClientRect();
+    const bx0 = b.left - r.left, by0 = b.top - r.top;
+    if (bx0 + b.width >= x0 && bx0 <= x1 && by0 + b.height >= y0 && by0 <= y1) out.push(parseK(el.dataset.k));
+  }
+  return out;
+}
+function edDblClick(e) {
+  if (!S.adv || S.recording || performance.now() - (ED.dblT || 0) < 700) return;
+  const tg = e.target;
+  if (!tg.isConnected || tg.closest('button, input, .tl-label, .tl-ruler, [data-k]')) return;
+  const lane = tg.closest('.tl-lane[data-track]');
+  if (lane) edDblAt(lane, e.clientX, e.clientY);
+}
+// double-click (or double-tap) on a row adds that row's kind of thing right there
+function edDblAt(lane, clientX, clientY) {
+  const t = roundT(laneT(clientX)), k = lane.dataset.track;
+  if (k === 'boxes') ctxOpen(boxTypeItems(t), clientX, clientY, `Add a box at ${fmtT(t)}`);
+  else if (k === 'eew') edAddReport(t, lane.dataset.ev);
+  else edTrackAdd(k, null, t);
+}
+function edContextMenu(e) {
+  if (!S.adv || S.recording) return;
+  e.preventDefault();
+  clearTimeout(ED.lp.timer);
+  if (ED.lp.fired) return;
+  if (e.pointerType && e.pointerType !== 'mouse') ED.lp.fired = true;
+  edContext(e);
+}
+function edContextAt(x, y) { const el = document.elementFromPoint(x, y); if (el) edContext({ target: el, clientX: x, clientY: y }); }
+function edContext(e) {
+  if (!S.adv || S.recording) return;
+  const tg = e.target && e.target.closest ? e.target : null;
+  if (!tg) return;
+  const x = e.clientX, y = e.clientY;
+  const kEl = tg.closest('[data-k]');
+  if (kEl) {
+    const ref = parseK(kEl.dataset.k);
+    if (!edFindSel(ref)) return;
+    if (!edIsSel(ref)) edSelect(ref);
+    ctxOpen(edSelItems(), x, y, edSelTitle());
+    return;
+  }
+  if (tg.closest('.tl-ruler')) { const t = roundT(laneT(x)); ctxOpen(edRulerItems(t), x, y, `At ${fmtT(t)}`); return; }
+  const hd = tg.closest('[data-track-head]');
+  if (hd && tg.closest('.tl-label')) { ctxOpen(edTrackItems(hd.dataset.trackHead), x, y, TRACKS[hd.dataset.trackHead][0]); return; }
+  // the name column of a camera, cue or empty row: that track's menu
+  const rowLane = tg.closest('.tl-label') && tg.closest('.tl-row') && tg.closest('.tl-row').querySelector('.tl-lane[data-track]');
+  if (rowLane && TRACKS[rowLane.dataset.track]) { ctxOpen(edTrackItems(rowLane.dataset.track, undefined, rowLane.dataset.ev), x, y, TRACKS[rowLane.dataset.track][0]); return; }
+  const lane = tg.closest('.tl-lane[data-track]');
+  if (lane) {
+    const t = roundT(laneT(x)), k = lane.dataset.track;
+    ctxOpen([{ label: 'Move the playhead here', run: () => seek(t) }, '-', ...edTrackItems(k, t, lane.dataset.ev)], x, y, `${TRACKS[k][0]} · ${fmtT(t)}`);
+  }
+}
+
+// ---------------------------------------------------------------- menus (toolbar, track ⋯, right-click)
+const CTX = { x: 0, y: 0 };
+function menuFill(m, items, onPick) {
+  m.textContent = '';
+  for (const it of items) {
+    if (!it) continue;
+    if (it === '-') { m.append(h('hr')); continue; }
+    if (it.head) { m.append(h('div', { class: 'mh', text: it.head })); continue; }
+    const radio = it.check !== undefined;
+    m.append(h('button', { type: 'button', role: radio ? 'menuitemradio' : 'menuitem', 'aria-checked': radio ? String(!!it.check) : null, class: it.danger ? 'danger' : null, disabled: !!it.disabled,
+      onclick: (e) => { e.stopPropagation(); onPick(); it.run(); } },
+      it.c ? h('i', { style: `--c:${it.c}` }) : radio ? h('b', { class: 'ck', text: it.check ? '●' : '' }) : null,
+      h('em', { text: it.label }), it.key ? h('kbd', { text: it.key }) : it.ja ? h('span', { class: 'ja', text: it.ja }) : null));
+  }
+}
+function menuKeys(e) {
+  const items = $$('button:not([disabled])', e.currentTarget);
+  if (!items.length) return;
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+  else if (e.key === 'Escape') { e.stopPropagation(); edCloseMenu(); }
+}
+function ctxOpen(items, x, y, title) {
+  const m = $('#ctxMenu');
+  if (!m || !items.length) return;
+  edCloseMenu();
+  CTX.x = x; CTX.y = y;
+  menuFill(m, title ? [{ head: title }, ...items] : items, ctxClose);
+  m.hidden = false;
+  m.style.left = '0px'; m.style.top = '0px';
+  const r = m.getBoundingClientRect();
+  m.style.left = clamp(x, 6, Math.max(6, innerWidth - r.width - 6)) + 'px';
+  m.style.top = (y + r.height > innerHeight - 6 ? Math.max(6, y - r.height) : y) + 'px';
+  const first = m.querySelector('button:not([disabled])');
+  if (first) first.focus({ preventScroll: true });
+}
+function ctxClose() { const m = $('#ctxMenu'); if (m && !m.hidden) { m.hidden = true; return true; } return false; }
+function edCloseMenu() {
+  let closed = ctxClose();
+  const m = $('#addMenu');
+  if (m && !m.hidden) { m.hidden = true; $('#btnAddBox').setAttribute('aria-expanded', 'false'); closed = true; }
+  const p = $('#resetPop');
+  if (p && !p.hidden) { p.hidden = true; $('#btnResetAll').setAttribute('aria-expanded', 'false'); closed = true; }
+  return closed;
+}
+function boxTypeItems(t) {
+  const out = [];
+  const add = (type, label, ja, c, tpl) => out.push({ label, ja, c, run: () => edAddBox(type, tpl, t) });
+  out.push({ head: 'EEW & intensity' });
+  for (const ty of ['eew', 'countdown', 'flash', 'epicenter', 'report']) add(ty, BOX_TYPES[ty].label, BOX_TYPES[ty].ja, BOX_TYPES[ty].color);
+  out.push('-', { head: 'Alerts (auto content)' });
+  for (const ty of ['tsunami', 'megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide']) add(ty, BOX_TYPES[ty].label, BOX_TYPES[ty].ja, BOX_TYPES[ty].color);
+  out.push('-', { head: 'Your own' });
+  for (const tp of CUSTOM_TEMPLATES) add('custom', tp.id === 'blank' ? 'Custom alert (blank)' : tp.en.title, tp.title, SEVERITY[tp.sev].col, tp);
+  for (const ty of ['banner', 'ticker', 'timestamp']) add(ty, BOX_TYPES[ty].label, BOX_TYPES[ty].ja, BOX_TYPES[ty].color);
+  return out;
+}
 function edOpenMenu() {
   const m = $('#addMenu');
-  m.textContent = '';
-  const add = (type, label, ja, col, tpl) => m.append(h('button', { type: 'button', role: 'menuitem', onclick: () => { edCloseMenu(); edAddBox(type, tpl); } },
-    h('i', { style: `--c:${col}` }), label, h('span', { class: 'ja', text: ja })));
-  m.append(h('div', { class: 'mh', text: 'EEW & intensity' }));
-  for (const t of ['eew', 'countdown', 'flash', 'epicenter', 'report']) add(t, BOX_TYPES[t].label, BOX_TYPES[t].ja, BOX_TYPES[t].color);
-  m.append(h('hr'), h('div', { class: 'mh', text: 'Alerts (auto content)' }));
-  for (const t of ['tsunami', 'megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide']) add(t, BOX_TYPES[t].label, BOX_TYPES[t].ja, BOX_TYPES[t].color);
-  m.append(h('hr'), h('div', { class: 'mh', text: 'Your own' }));
-  for (const tp of CUSTOM_TEMPLATES) add('custom', tp.id === 'blank' ? 'Custom alert (blank)' : tp.en.title, tp.title, SEVERITY[tp.sev].col, tp);
-  for (const t of ['banner', 'ticker', 'timestamp']) add(t, BOX_TYPES[t].label, BOX_TYPES[t].ja, BOX_TYPES[t].color);
+  edCloseMenu();
+  menuFill(m, boxTypeItems(), edCloseMenu);
   m.hidden = false;
   $('#btnAddBox').setAttribute('aria-expanded', 'true');
   const first = m.querySelector('button');
   if (first) first.focus();
 }
-function edCloseMenu() { const m = $('#addMenu'); if (m && !m.hidden) { m.hidden = true; $('#btnAddBox').setAttribute('aria-expanded', 'false'); } }
+function edTrackAdd(k, anchor, t) {
+  if (!S.adv || S.recording) return;
+  if (k === 'quakes') edAddEvent(t);
+  else if (k === 'eew') edAddReport(t);
+  else if (k === 'cam') edAddCam(t);
+  else if (k === 'cues') edAddCue(t);
+  else if (k === 'boxes') {
+    const r = anchor ? anchor.getBoundingClientRect() : null;
+    ctxOpen(boxTypeItems(t), r ? r.left : CTX.x, r ? r.bottom + 4 : CTX.y, t === undefined ? 'Add a box at the playhead' : `Add a box at ${fmtT(t)}`);
+  }
+}
+function edTrackMenu(k, anchor) {
+  if (!S.adv || S.recording || !TRACKS[k]) return;
+  if (!anchor) anchor = $(`#tlInner [data-track-head="${k}"] .tl-hb:last-of-type`);
+  const r = anchor ? anchor.getBoundingClientRect() : { left: innerWidth / 2, bottom: innerHeight / 3 };
+  ctxOpen(edTrackItems(k), r.left, r.bottom + 4, TRACKS[k][0]);
+}
+// a track's actions; t = where the menu was opened on the timeline (undefined = the playhead)
+function edTrackItems(k, t, evId) {
+  const d = S.adv, here = t === undefined ? ' at the playhead' : ' here';
+  const pick = (refs) => { edSetSel(refs); edRender(); edInspector(); needRender = true; };
+  const items = [];
+  if (k === 'quakes') {
+    items.push({ label: 'Add a quake' + here, run: () => edAddEvent(t) });
+    items.push({ label: 'Select every quake', disabled: d.events.length < 2, run: () => pick(d.events.map((x) => ({ kind: 'event', id: x.id }))) });
+  } else if (k === 'eew') {
+    items.push({ label: 'Add an EEW report' + here, run: () => edAddReport(t, evId) });
+    items.push({ label: 'Select every report', disabled: !d.eew.length, run: () => pick(d.eew.map((x) => ({ kind: 'eew', id: x.id }))) });
+    items.push({ label: 'Make the reports automatic again', disabled: d.events.every((x) => x.eewAuto), run: () => { edEdit(() => { for (const ev of d.events) ev.eewAuto = true; refreshAutoEEW(S.DB, d); }, { structural: true }); toast('EEW reports rebuilt from the physics.'); } });
+  } else if (k === 'boxes') {
+    items.push({ label: 'Add a box' + here + '…', run: () => edTrackAdd('boxes', null, t) });
+    items.push({ label: 'Select every box', disabled: !d.items.length, run: () => pick(d.items.map((x) => ({ kind: 'item', id: x.id }))) });
+    items.push({ label: 'Show every box', disabled: !d.items.some((x) => x.hidden), run: () => edEdit(() => { for (const x of d.items) x.hidden = false; }, { structural: true }) });
+    items.push({ label: 'Hide every box', disabled: !d.items.some((x) => !x.hidden), run: () => edEdit(() => { for (const x of d.items) x.hidden = true; }, { structural: true }) });
+    items.push({ label: 'Sort the rows by start time', disabled: d.items.length < 2, run: () => edEdit(() => { d.items.sort((a, b) => a.t0 - b.t0 || TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type)); }, { structural: true }) });
+    items.push({ label: 'Put standard boxes back on their auto times', run: () => edResetAll('time') });
+    items.push('-', { label: 'Remove every box', danger: true, disabled: !d.items.length, run: () => { edEdit(() => { d.items = []; S.sel = null; S.multi = []; }, { structural: true }); toast('Every box removed. Undo brings them back.'); } });
+  } else if (k === 'cam') {
+    items.push({ label: 'Add a camera key' + here, run: () => edAddCam(t) });
+    items.push({ label: 'Select every key', disabled: !d.camera.keys.length, run: () => pick(d.camera.keys.map((x) => ({ kind: 'cam', id: x.id }))) });
+    items.push({ head: 'Camera mode' });
+    for (const [m, lab] of [['auto', 'Auto (follows the quake)'], ['keys', 'Keyframes (this row)'], ['off', 'Off (free map)']]) items.push({ label: lab, check: d.camera.mode === m, run: () => edEdit(() => { d.camera.mode = m; }, { structural: true }) });
+    items.push('-', { label: 'Remove every camera key', danger: true, disabled: !d.camera.keys.length, run: () => edEdit(() => { d.camera.keys = []; if (d.camera.mode === 'keys') d.camera.mode = 'auto'; S.sel = null; S.multi = []; }, { structural: true }) });
+  } else if (k === 'cues') {
+    items.push({ label: 'Add a sound cue' + here, run: () => edAddCue(t) });
+    items.push({ label: 'Select every cue', disabled: !d.cues.length, run: () => pick(d.cues.map((x) => ({ kind: 'cue', id: x.id }))) });
+    items.push('-', { label: 'Remove every sound cue', danger: true, disabled: !d.cues.length, run: () => edEdit(() => { d.cues = []; S.sel = null; S.multi = []; }, { structural: true }) });
+  }
+  if (t === undefined && TRACKS[k]) items.push('-', { label: ED.collapse[k] ? 'Unfold this track' : 'Fold this track away', run: () => edToggleTrack(k) });
+  return items;
+}
+function edRulerItems(t) {
+  const items = [{ label: 'Move the playhead here', run: () => seek(t) }];
+  if (ED.marks.length) { items.push('-', { head: 'Jump to' }); for (const m of ED.marks) items.push({ label: `${m.label} · ${fmtT(m.t)}`, c: m.c, run: () => seek(m.t) }); }
+  items.push('-', { label: 'Zoom to fit everything', run: edFit });
+  return items;
+}
+function edSelTitle() {
+  const list = edAllSel();
+  if (list.length > 1) return `${list.length} selected`;
+  return list.length ? edNameOf(list[0], edFindSel(list[0])) : '';
+}
+// what you can do with the selection (right-click menu)
+function edSelItems() {
+  const list = edAllSel(), d = S.adv, tau = S.tau;
+  if (!list.length) return [];
+  const one = list.length === 1 ? list[0] : null, o = one ? edFindSel(one) : null;
+  const boxes = list.filter((s) => s.kind === 'item').map((s) => edFindSel(s));
+  const items = [{ label: 'Move to the playhead', run: edMoveSelToPlayhead }];
+  if (one && one.kind === 'item') {
+    const spans = o.t0 < tau - 0.05 && (o.t1 === null || o.t1 > tau + 0.05);
+    items.push({ label: 'Split at the playhead', key: 'S', disabled: !spans, run: edSplitSel });
+    items.push({ label: 'Start at the playhead', run: () => edEdit(() => { o.t0 = roundT(tau); if (o.t1 !== null && o.t1 <= o.t0) o.t1 = roundT(o.t0 + 5); }, { structural: true }) });
+    items.push({ label: 'End at the playhead', disabled: tau <= o.t0 + 0.2, run: () => edEdit(() => { o.t1 = roundT(Math.max(tau, o.t0 + 0.2)); }, { structural: true }) });
+    if (o.t1 !== null) items.push({ label: 'Stay on to the end', run: () => edEdit(() => { o.t1 = null; }, { structural: true }) });
+    items.push({ label: 'Rename', run: () => edRenameBox(o) });
+  } else if (boxes.length > 1) {
+    items.push({ label: 'Start them all at the playhead', run: () => edStartAllAtPlayhead() });
+    items.push({ label: 'Split them at the playhead', key: 'S', run: edSplitSel });
+  }
+  if (boxes.length) {
+    const shown = boxes.some((b) => !b.hidden);
+    items.push({ label: shown ? (boxes.length > 1 ? 'Hide the boxes' : 'Hide') : (boxes.length > 1 ? 'Show the boxes' : 'Show'), key: 'H', run: edToggleHideSel });
+  }
+  if (one && one.kind === 'item') {
+    const i = d.items.indexOf(o);
+    items.push({ label: 'Move row up', key: 'Alt+↑', disabled: i <= 0, run: () => edMoveRow(-1) });
+    items.push({ label: 'Move row down', key: 'Alt+↓', disabled: i >= d.items.length - 1, run: () => edMoveRow(1) });
+  }
+  if (one && one.kind === 'event') {
+    items.push({ label: 'Select it with its reports and boxes', run: () => { edSetSel([one, ...d.eew.filter((r) => r.ev === o.id).map((r) => ({ kind: 'eew', id: r.id })), ...d.items.filter((it) => it.ev === o.id).map((it) => ({ kind: 'item', id: it.id }))]); edRender(); edInspector(); needRender = true; } });
+  }
+  if (one && one.kind === 'eew') {
+    const ev = d.events.find((x) => x.id === o.ev);
+    items.push({ label: 'Back to automatic reports', disabled: !ev || ev.eewAuto, run: () => edEdit(() => { ev.eewAuto = true; refreshAutoEEW(S.DB, d, ev.id); S.sel = { kind: 'event', id: ev.id }; S.multi = []; }, { structural: true }) });
+  }
+  if (one) items.push({ label: 'Play from here', run: () => { seek(edStartOf(one) - 0.5); startPlayback(false); } });
+  items.push('-');
+  items.push({ label: list.length > 1 ? `Duplicate ${list.length}` : 'Duplicate', key: 'D', disabled: list.every((s) => s.kind === 'event'), run: edDuplicateSel });
+  items.push({ label: list.length > 1 ? `Delete ${list.length}` : 'Delete', key: 'Del', danger: true, run: edDeleteSel });
+  return items;
+}
+function edRenameBox(it, labelEl) {
+  if (!labelEl) labelEl = $(`#tlInner .tl-label[data-k="item:${it.id}"]`);
+  const nm = labelEl && labelEl.querySelector('.nm');
+  if (!nm) { edSelect({ kind: 'item', id: it.id }); return; }
+  const auto = itemTitle({ ...it, name: '' });
+  const inp = h('input', { type: 'text', class: 'tl-ren', value: it.name || auto, maxlength: 60, spellcheck: 'false', 'aria-label': 'Name on the timeline' });
+  nm.replaceWith(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const fin = (ok) => {
+    if (done) return;
+    done = true;
+    const v = inp.value.trim();
+    if (ok && v !== (it.name || auto)) edEdit(() => { it.name = v === auto ? '' : v; }, { structural: true });
+    else edRender();
+  };
+  inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); });
+  inp.addEventListener('blur', () => fin(true));
+  for (const ty of ['click', 'dblclick', 'pointerdown']) inp.addEventListener(ty, (ev) => ev.stopPropagation());
+}
+
+// ---------------------------------------------------------------- add / delete / duplicate / split
 function edSelEvId() {
   const d = S.adv;
   if (S.sel && S.sel.kind === 'event') return S.sel.id;
   if (S.sel && S.sel.kind === 'eew') { const r = d.eew.find((x) => x.id === S.sel.id); if (r) return r.ev; }
-  if (S.sel && S.sel.kind === 'item') { const it = d.items.find((x) => x.id === S.sel.id); if (it && it.ev !== 'auto') return it.ev; }
+  if (S.sel && S.sel.kind === 'item') { const it = d.items.find((x) => x.id === S.sel.id); if (it && it.ev !== 'auto' && d.events.some((e) => e.id === it.ev)) return it.ev; }
   return d.events[0].id;
 }
-function edAddBox(type, tpl) {
-  if (!S.adv) return;
-  const t0 = roundT(Math.max(S.tau, T_START));
+// every add takes an optional time; without one it goes in at the playhead
+function edAddBox(type, tpl, t) {
+  if (!S.adv || S.recording) return;
+  const t0 = roundT(Math.max(t ?? S.tau, T_START));
   let t1 = null;
   if (type === 'banner') t1 = roundT(t0 + 12);
   else if (type === 'eew' || type === 'countdown') t1 = roundT(t0 + 60);
@@ -5346,19 +6156,19 @@ function edAddBox(type, tpl) {
     Object.assign(data, { title: src.title, sub: src.sub, body: src.body, sev: tpl.sev, icon: tpl.icon });
   }
   const it = mkItem(type, type === 'countdown' ? 'auto' : edSelEvId(), t0, t1, data);
-  edEdit(() => { S.adv.items.push(it); S.sel = { kind: 'item', id: it.id }; }, { structural: true });
+  edEdit(() => { S.adv.items.push(it); S.sel = { kind: 'item', id: it.id }; S.multi = []; }, { structural: true });
   // park the playhead just past the entrance so the new box is on screen
-  if (S.state !== 'playing' && (S.state === 'idle' || S.tau < t0 + 0.8)) seek(t0 + 0.8);
-  toast(`${BOX_TYPES[type].label} added at ${t0.toFixed(1)} s`, 1600);
+  if (S.state !== 'playing' && (S.state === 'idle' || t !== undefined || S.tau < t0 + 0.8)) seek(t0 + 0.8);
+  toast(`${BOX_TYPES[type].label} added at ${fmtT(t0)}`, 1600);
 }
-function edAddEvent() {
-  if (!S.adv) return;
+function edAddEvent(t) {
+  if (!S.adv || S.recording) return;
   const d = S.adv, m = d.events[0];
   let n = d.events.length + 1;
   while (d.events.some((e) => e.id === 'e' + n)) n++;
-  const t0 = roundT(Math.max(0, S.tau));
+  const t0 = roundT(Math.max(0, t ?? S.tau));
   const ev = { id: 'e' + n, t0, lat: +(m.lat + 0.45).toFixed(3), lon: +(m.lon + 0.35).toFixed(3), depth: m.depth, M: Math.max(4.5, +(m.M - 0.8).toFixed(1)), strike: m.strike,
-    shaking: true, bias: 0, targetMax: null, name: null, obsMap: null, eewAuto: true, tune: {}, country: m.country || 'auto' };
+    shaking: true, bias: 0, targetMax: null, name: null, obsMap: null, eewAuto: true, tune: {}, country: m.country || 'auto', sounds: {} };
   edEdit(() => {
     d.events.push(ev);
     refreshAutoEEW(S.DB, d, ev.id);
@@ -5367,75 +6177,181 @@ function edAddEvent() {
       const main = d.items.find((i) => i.type === 'eew');
       d.items.push(mkItem('eew', ev.id, roundT(reps[0].t - 0.2), roundT(Math.max(reps[reps.length - 1].t + 20, main && main.t1 !== null ? main.t1 : 0)), { ...itemDefaults('eew'), standby: false }));
     }
-    S.sel = { kind: 'event', id: ev.id };
+    S.sel = { kind: 'event', id: ev.id }; S.multi = [];
   }, { structural: true });
-  toast('Quake added. Pick its spot on the map in the inspector.', 2400);
+  toast(`Quake added at ${fmtT(t0)}. Pick its spot on the map in the panel on the right.`, 2600);
 }
-function edAddReport() {
+function edAddReport(t, evId) {
+  if (!S.adv || S.recording) return;
   const d = S.adv;
-  const evId = edSelEvId();
-  const ev = d.events.find((e) => e.id === evId);
-  const t = roundT(Math.max(S.tau, ev.t0 + 1));
-  const prev = d.eew.filter((r) => r.ev === evId && r.t <= t).sort((a, b) => b.t - a.t)[0];
-  const r = prev ? { ...prev, id: newId('r'), t, final: false } : { id: newId('r'), ev: evId, t, kind: 'forecast', M: ev.M, depth: ev.depth, lat: ev.lat, lon: ev.lon, acc: 2, plum: false, final: false, maxOverride: null };
-  edEdit(() => { d.eew.push(r); d.eew.sort((a, b) => a.t - b.t); ev.eewAuto = false; S.sel = { kind: 'eew', id: r.id }; }, { structural: true });
+  const id = evId && d.events.some((e) => e.id === evId) ? evId : edSelEvId();
+  const ev = d.events.find((e) => e.id === id);
+  const tt = roundT(Math.max(t ?? S.tau, ev.t0 + 1));
+  const prev = d.eew.filter((r) => r.ev === id && r.t <= tt).sort((a, b) => b.t - a.t)[0];
+  const r = prev ? { ...prev, id: newId('r'), t: tt, final: false } : { id: newId('r'), ev: id, t: tt, kind: 'forecast', M: ev.M, depth: ev.depth, lat: ev.lat, lon: ev.lon, acc: 2, plum: false, final: false, maxOverride: null };
+  edEdit(() => { d.eew.push(r); d.eew.sort((a, b) => a.t - b.t); ev.eewAuto = false; S.sel = { kind: 'eew', id: r.id }; S.multi = []; }, { structural: true });
 }
 function viewAsKey() {
   const v = R.fv, ll = screenToLonLat(730, H / 2, v);
   const r = ((H * 0.88) / v.s) * kmPerWU(ll.lat) / 2;
   return { lat: +ll.lat.toFixed(3), lon: +ll.lon.toFixed(3), r: Math.round(clamp(r, 10, 6000)) };
 }
-function edAddCam() {
+function edAddCam(t) {
+  if (!S.adv || S.recording) return;
   const d = S.adv;
-  const k = { id: newId('c'), t: roundT(Math.max(S.tau, T_START)), target: 'custom', ev: edSelEvId(), ...viewAsKey(), dur: 1.6, ease: 'default' };
+  const k = { id: newId('c'), t: roundT(Math.max(t ?? S.tau, T_START)), target: 'custom', ev: edSelEvId(), ...viewAsKey(), dur: 1.6, ease: 'default' };
   const was = d.camera.mode;
-  edEdit(() => { d.camera.keys.push(k); d.camera.mode = 'keys'; S.sel = { kind: 'cam', id: k.id }; }, { structural: true });
+  edEdit(() => { d.camera.keys.push(k); d.camera.mode = 'keys'; S.sel = { kind: 'cam', id: k.id }; S.multi = []; }, { structural: true });
   if (was !== 'keys') toast('Camera switched to keyframes. The key uses the current view.', 2400);
 }
-function edAddCue() {
-  const cu = { id: newId('s'), t: roundT(Math.max(S.tau, T_START)), sound: 'b:ping', vol: 1 };
-  edEdit(() => { S.adv.cues.push(cu); S.sel = { kind: 'cue', id: cu.id }; }, { structural: true });
+function edAddCue(t) {
+  if (!S.adv || S.recording) return;
+  const cu = { id: newId('s'), t: roundT(Math.max(t ?? S.tau, T_START)), sound: 'b:ping', vol: 1 };
+  edEdit(() => { S.adv.cues.push(cu); S.sel = { kind: 'cue', id: cu.id }; S.multi = []; }, { structural: true });
 }
 function edDeleteSel() {
-  const s = S.sel, d = S.adv;
-  if (!s || !d) return;
-  if (s.kind === 'event') {
-    if (d.events.length < 2) { toast('A scenario needs at least one quake.'); return; }
-    edEdit(() => {
-      d.events = d.events.filter((e) => e.id !== s.id);
-      d.eew = d.eew.filter((r) => r.ev !== s.id);
-      d.items = d.items.filter((it) => !(it.ev === s.id && (it.type === 'eew')));
-      for (const it of d.items) if (it.ev === s.id) it.ev = d.events[0].id;
-      S.sel = null;
-    }, { structural: true });
-    return;
-  }
+  const list = edAllSel(), d = S.adv;
+  if (!list.length || !d || S.recording) return;
+  const evIds = new Set(list.filter((s) => s.kind === 'event').map((s) => s.id));
+  let kept = false;
+  if (evIds.size && evIds.size >= d.events.length) { evIds.delete(d.events[0].id); kept = true; }
+  const ids = new Set(list.filter((s) => s.kind !== 'event').map((s) => s.id));
+  if (!evIds.size && !ids.size) { toast('A scenario needs at least one quake.'); return; }
   edEdit(() => {
-    if (s.kind === 'item') d.items = d.items.filter((x) => x.id !== s.id);
-    if (s.kind === 'eew') { const r = d.eew.find((x) => x.id === s.id); d.eew = d.eew.filter((x) => x.id !== s.id); const ev = r && d.events.find((e) => e.id === r.ev); if (ev) ev.eewAuto = false; }
-    if (s.kind === 'cam') d.camera.keys = d.camera.keys.filter((x) => x.id !== s.id);
-    if (s.kind === 'cue') d.cues = d.cues.filter((x) => x.id !== s.id);
-    S.sel = null;
+    if (evIds.size) {
+      d.events = d.events.filter((e) => !evIds.has(e.id));
+      d.eew = d.eew.filter((r) => !evIds.has(r.ev));
+      d.items = d.items.filter((it) => !(evIds.has(it.ev) && it.type === 'eew'));
+      for (const it of d.items) if (evIds.has(it.ev)) it.ev = d.events[0].id;
+      for (const k of d.camera.keys) if (evIds.has(k.ev)) k.ev = d.events[0].id;
+    }
+    const touched = new Set(d.eew.filter((r) => ids.has(r.id)).map((r) => r.ev));
+    d.eew = d.eew.filter((r) => !ids.has(r.id));
+    for (const ev of d.events) if (touched.has(ev.id)) ev.eewAuto = false;
+    d.items = d.items.filter((x) => !ids.has(x.id));
+    d.camera.keys = d.camera.keys.filter((x) => !ids.has(x.id));
+    d.cues = d.cues.filter((x) => !ids.has(x.id));
+    S.sel = null; S.multi = [];
   }, { structural: true });
+  if (kept) toast('Kept the first quake. A scenario needs at least one.', 2400);
+  else if (list.length > 1) toast(`Deleted ${list.length}. Undo brings them back.`, 1800);
 }
 function edDuplicateSel() {
-  const s = S.sel, d = S.adv;
-  if (!s || !d) return;
-  const o = edFindSel(s);
-  if (!o) return;
-  if (s.kind === 'item') { const c = deepCopy(o); c.id = newId('b'); c.t0 = roundT(o.t0 + 2); if (c.t1 !== null) c.t1 = roundT(o.t1 + 2); edEdit(() => { d.items.push(c); S.sel = { kind: 'item', id: c.id }; }, { structural: true }); }
-  else if (s.kind === 'eew') { const c = { ...o, id: newId('r'), t: roundT(o.t + 1.5), final: false }; edEdit(() => { d.eew.push(c); d.eew.sort((a, b) => a.t - b.t); const ev = d.events.find((e) => e.id === c.ev); if (ev) ev.eewAuto = false; S.sel = { kind: 'eew', id: c.id }; }, { structural: true }); }
-  else if (s.kind === 'cam') { const c = { ...o, id: newId('c'), t: roundT(o.t + 2) }; edEdit(() => { d.camera.keys.push(c); S.sel = { kind: 'cam', id: c.id }; }, { structural: true }); }
-  else if (s.kind === 'cue') { const c = { ...o, id: newId('s'), t: roundT(o.t + 1) }; edEdit(() => { d.cues.push(c); S.sel = { kind: 'cue', id: c.id }; }, { structural: true }); }
+  const all = edAllSel(), d = S.adv;
+  if (!all.length || !d || S.recording) return;
+  const list = all.filter((s) => s.kind !== 'event');
+  if (!list.length) { toast('Quakes can’t be copied. ＋ Quake adds another one.'); return; }
+  const off = list.length > 1 ? 2 : null;
+  const made = [];
+  edEdit(() => {
+    for (const s of list) {
+      const o = edFindSel(s);
+      if (s.kind === 'item') {
+        const c = deepCopy(o), dt = off ?? 2;
+        c.id = newId('b'); c.t0 = roundT(o.t0 + dt); if (c.t1 !== null) c.t1 = roundT(o.t1 + dt);
+        d.items.splice(d.items.indexOf(o) + 1, 0, c);
+        made.push({ kind: 'item', id: c.id });
+      } else if (s.kind === 'eew') {
+        const c = { ...o, id: newId('r'), t: roundT(o.t + (off ?? 1.5)), final: false };
+        d.eew.push(c);
+        const ev = d.events.find((e) => e.id === c.ev);
+        if (ev) ev.eewAuto = false;
+        made.push({ kind: 'eew', id: c.id });
+      } else if (s.kind === 'cam') {
+        const c = { ...o, id: newId('c'), t: roundT(o.t + (off ?? 2)) };
+        d.camera.keys.push(c);
+        made.push({ kind: 'cam', id: c.id });
+      } else if (s.kind === 'cue') {
+        const c = { ...o, id: newId('s'), t: roundT(o.t + (off ?? 1)) };
+        d.cues.push(c);
+        made.push({ kind: 'cue', id: c.id });
+      }
+    }
+    d.eew.sort((a, b) => a.t - b.t);
+    edSetSel(made);
+  }, { structural: true });
+  if (all.length > list.length) toast('Copied everything but the quakes.', 1800);
 }
 function edNudgeSel(dt) {
-  const s = S.sel, o = edFindSel(s);
-  if (!o) return;
+  const list = edAllSel();
+  if (!list.length) return;
+  const plan = edMovePlan(list);
+  edEdit(() => edApplyPlan(plan, dt), { coalesce: 'nudge:' + list.map(selKey).join(','), structural: true });
+}
+function edMoveSelToPlayhead() {
+  const list = edAllSel();
+  if (!list.length) return;
+  const dt = roundT(S.tau - Math.min(...list.map(edStartOf)));
+  if (!dt) return;
+  const plan = edMovePlan(list);
+  edEdit(() => edApplyPlan(plan, dt), { structural: true });
+}
+function edStartAllAtPlayhead() {
+  const boxes = edAllSel().filter((s) => s.kind === 'item').map((s) => edFindSel(s));
+  if (!boxes.length) return;
+  const t = roundT(S.tau);
+  edEdit(() => { for (const b of boxes) { const dur = b.t1 === null ? null : b.t1 - b.t0; b.t0 = t; if (dur !== null) b.t1 = roundT(t + dur); } }, { structural: true });
+}
+function edToggleHideSel() {
+  const boxes = edAllSel().filter((s) => s.kind === 'item').map((s) => edFindSel(s));
+  if (!boxes.length) return;
+  const hide = boxes.some((b) => !b.hidden);
+  edEdit(() => { for (const b of boxes) b.hidden = hide; }, { structural: true });
+}
+// cut the selected boxes in two at the playhead (e.g. to change the text halfway)
+function edSplitSel() {
+  if (!S.adv || S.recording) return;
+  const tau = roundT(S.tau);
+  const picked = edAllSel().filter((s) => s.kind === 'item').map((s) => edFindSel(s));
+  if (!picked.length) { toast('Select a box, put the playhead over it, then split.'); return; }
+  const boxes = picked.filter((o) => o.t0 < tau - 0.05 && (o.t1 === null || o.t1 > tau + 0.05));
+  if (!boxes.length) { toast('Put the playhead over the box first, then split it.'); return; }
+  const made = [];
   edEdit(() => {
-    if (s.kind === 'item') { o.t0 = roundT(o.t0 + dt); if (o.t1 !== null) o.t1 = roundT(o.t1 + dt); }
-    else if (s.kind === 'event') { o.t0 = roundT(o.t0 + dt); for (const r of S.adv.eew) if (r.ev === o.id) r.t = roundT(r.t + dt); for (const it of S.adv.items) if (it.ev === o.id) { it.t0 = roundT(it.t0 + dt); if (it.t1 !== null) it.t1 = roundT(it.t1 + dt); } }
-    else { o.t = roundT(o.t + dt); if (s.kind === 'eew') { const ev = S.adv.events.find((e) => e.id === o.ev); if (ev) ev.eewAuto = false; } }
-  }, { coalesce: 'nudge:' + s.id, structural: true });
+    for (const o of boxes) {
+      const c = deepCopy(o);
+      c.id = newId('b'); c.t0 = tau;
+      o.t1 = tau;
+      S.adv.items.splice(S.adv.items.indexOf(o) + 1, 0, c);
+      made.push({ kind: 'item', id: c.id });
+    }
+    edSetSel(made);
+  }, { structural: true });
+  toast(boxes.length > 1 ? `Split ${boxes.length} boxes at ${fmtT(tau)}` : `Split at ${fmtT(tau)}`, 1600);
+}
+// row order is just for you (on screen, boxes stack in the order they appear)
+function edMoveRow(dir) {
+  const s = S.sel;
+  if (!s || s.kind !== 'item' || S.multi.length > 1) return;
+  const d = S.adv, i = d.items.findIndex((x) => x.id === s.id), j = i + dir;
+  if (i < 0 || j < 0 || j >= d.items.length) return;
+  edEdit(() => { const [it] = d.items.splice(i, 1); d.items.splice(j, 0, it); }, { coalesce: 'row:' + s.id, structural: true });
+}
+// Reset all: 'keep' = everything but the quakes, 'easy' = start over from the Easy setup, 'time' = re-time the standard boxes
+function edResetAll(how = 'keep') {
+  if (!S.adv || S.recording) return;
+  if (how === 'easy') {
+    edPushUndo();
+    S.adv = easyDoc(); S.sel = null; S.multi = [];
+    rebuild({ keepTime: true }); edInspector();
+    toast('Rebuilt from the Easy setup. Undo brings your timeline back.', 3200);
+    return;
+  }
+  if (how === 'time') {
+    edEdit(() => autoTimeItems(S.DB, S.adv), { structural: true });
+    toast('Standard boxes are back on their automatic times.', 2400);
+    return;
+  }
+  edEdit(() => { resetDocTimeline(S.DB, S.adv, S.easy.extras, S.prefs.lang); S.sel = null; S.multi = []; }, { structural: true });
+  toast('Timeline reset. Your quakes stayed put. Undo brings the rest back.', 3200);
+}
+function edTips(show, save) {
+  const el = $('#tlTips');
+  if (!el) return;
+  el.hidden = !show;
+  const b = $('#btnTips');
+  if (b) b.setAttribute('aria-pressed', String(!!show));
+  if (save) try { localStorage.setItem('quaker.v2.tltip', show ? 'on' : 'off'); } catch (e) { /* storage off */ }
 }
 
 // ---------------------------------------------------------------- inspector
@@ -5457,20 +6373,52 @@ function edInspector() {
   const root = $('#insp');
   if (!root || S.mode !== 'adv' || !S.adv) return;
   root.textContent = '';
-  const s = S.sel, o = edFindSel(s);
-  if (!o) { root.append(...inspDoc()); return; }
-  if (s.kind === 'item') root.append(...inspItem(o));
+  const list = edAllSel();
+  const s = list.length === 1 ? list[0] : null, o = s ? edFindSel(s) : null;
+  if (list.length > 1) root.append(...inspMulti(list));
+  else if (!o) root.append(...inspDoc());
+  else if (s.kind === 'item') root.append(...inspItem(o));
   else if (s.kind === 'event') root.append(...inspEvent(o));
   else if (s.kind === 'eew') root.append(...inspReport(o));
   else if (s.kind === 'cam') root.append(...inspCam(o));
   else if (s.kind === 'cue') root.append(...inspCue(o));
   if (S.recording) for (const el of $$('input,select,textarea,button', root)) el.disabled = true;
+  edSelUI();
+}
+// several things selected: move, hide or remove them together
+function inspMulti(list) {
+  const KIND = { event: ['quake', 'quakes'], eew: ['EEW report', 'EEW reports'], item: ['box', 'boxes'], cam: ['camera key', 'camera keys'], cue: ['sound cue', 'sound cues'] };
+  const cnt = {};
+  for (const s of list) cnt[s.kind] = (cnt[s.kind] || 0) + 1;
+  const parts = Object.entries(cnt).map(([k, n]) => `${n} ${KIND[k][n > 1 ? 1 : 0]}`);
+  const boxes = list.filter((s) => s.kind === 'item').map((s) => edFindSel(s));
+  const out = [ihead('#46A5FF', `${list.length} selected`, parts.join(' · ')),
+    h('p', { class: 'note', text: 'Drag any of them on the timeline and the rest follow. Shift-click adds or removes one. Esc lets go of all of them.' })];
+  out.push(fg('Move together',
+    h('div', { class: 'row' }, btn('−1 s', () => edNudgeSel(-1)), btn('−0.1 s', () => edNudgeSel(-0.1)), btn('+0.1 s', () => edNudgeSel(0.1)), btn('+1 s', () => edNudgeSel(1))),
+    h('div', { class: 'row' }, btn('Move to the playhead', edMoveSelToPlayhead), boxes.length > 1 ? btn('Start all at the playhead', edStartAllAtPlayhead) : null)));
+  if (boxes.length) {
+    const shown = boxes.some((b) => !b.hidden);
+    out.push(fg(boxes.length > 1 ? `The ${boxes.length} boxes` : 'The box', h('div', { class: 'row' }, btn(shown ? 'Hide' : 'Show', edToggleHideSel), btn('Split at the playhead', edSplitSel))));
+  }
+  const li = h('div', { class: 'msel' });
+  for (const s of list.slice().sort((a, b) => edStartOf(a) - edStartOf(b))) {
+    const o = edFindSel(s);
+    li.append(h('button', { type: 'button', class: 'msel-i', title: 'Select just this one', onclick: () => edSelect(s) },
+      h('span', { class: 'dot', style: `--c:${edColorOf(s, o)}` }), h('span', { class: 'nm', text: edNameOf(s, o) }), h('span', { class: 'tm', text: fmtT(edStartOf(s)) })));
+  }
+  out.push(fg('In the selection', li));
+  out.push(h('div', { class: 'row' }, btn(`Duplicate ${list.length}`, edDuplicateSel), btn('Clear selection', () => edSelect(null), 'btn sm ghost'),
+    h('span', { style: 'flex:1' }), btn(`Delete ${list.length}`, edDeleteSel, 'btn sm danger')));
+  return out;
 }
 function inspDoc() {
   const d = S.adv;
   const set = (obj, key, opt = {}) => (v) => edEdit(() => { obj[key] = v; }, { coalesce: 'doc:' + key, ...opt });
   const out = [ihead('#46A5FF', 'Scenario', 'シナリオ全体'),
-    h('p', { class: 'note', text: 'Click a bar or marker in the timeline (or a box on the stage) to edit it. Drag bars to move them and drag their ends to resize.' })];
+    h('p', { class: 'note', text: window.matchMedia && matchMedia('(pointer: coarse)').matches
+      ? 'Tap a bar or marker in the timeline (or a box on the stage) to edit it. Drag bars to move them, drag their ends to resize. Double-tap a row to add something there, press and hold anything for more.'
+      : 'Click a bar or marker in the timeline (or a box on the stage) to edit it. Drag bars to move them, drag their ends to resize. Shift-click or drag across empty space to grab several. Double-click a row to add something there, right-click anything for more.' })];
   out.push(fg('Basics',
     fRow('Title', cText(() => d.meta.title, set(d.meta, 'title'), { ph: S.world.main.name.en })),
     fRow('Kind', cSel(() => d.meta.kind, set(d.meta, 'kind'), enUI() ? [['scenario', 'Scenario (drill)'], ['real', 'Replay of a real quake']] : [['scenario', 'Scenario · 訓練 drill'], ['real', 'Replay of a real quake · 再現']])),
@@ -5535,6 +6483,7 @@ function inspItem(it) {
     h('div', { class: 'row' },
       btn('Start at playhead', () => edEdit(() => { it.t0 = roundT(S.tau); if (it.t1 !== null && it.t1 <= it.t0) it.t1 = roundT(it.t0 + 5); }, { structural: true })),
       btn('End at playhead', () => edEdit(() => { it.t1 = roundT(Math.max(S.tau, it.t0 + 0.2)); }, { structural: true })),
+      btn('Split at playhead', edSplitSel),
       btn('Preview', () => { seek(it.t0 - 0.5); startPlayback(false); }))));
   const docks = band ? [['top', 'Top band'], ['bottom', 'Bottom band'], ['free', 'Free position']] : [['right', 'Right column'], ['left', 'Left column'], ['center', 'Center'], ['free', 'Free position']];
   out.push(fg('Position',
@@ -5788,35 +6737,49 @@ function inspCue(cu) {
 
 // ---------------------------------------------------------------- toolbar wiring
 function edInit() {
+  try { ED.collapse = JSON.parse(localStorage.getItem('quaker.v2.tlcollapse') || '{}') || {}; } catch (e) { ED.collapse = {}; }
   $('#btnAddBox').addEventListener('click', (e) => { e.stopPropagation(); if ($('#addMenu').hidden) edOpenMenu(); else edCloseMenu(); });
-  document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) edCloseMenu(); });
-  $('#addMenu').addEventListener('keydown', (e) => {
-    const items = $$('#addMenu button');
-    const i = items.indexOf(document.activeElement);
-    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-    else if (e.key === 'Escape') { edCloseMenu(); $('#btnAddBox').focus(); }
-  });
-  $('#btnAddEvent').addEventListener('click', edAddEvent);
-  $('#btnAddReport').addEventListener('click', edAddReport);
-  $('#btnAddCam').addEventListener('click', edAddCam);
-  $('#btnAddCue').addEventListener('click', edAddCue);
-  $('#btnAutoTime').addEventListener('click', () => { edEdit(() => autoTimeItems(S.DB, S.adv), { structural: true }); toast('Standard boxes re-timed from the physics.'); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap, #ctxMenu')) edCloseMenu(); });
+  for (const id of ['#addMenu', '#ctxMenu', '#resetPop']) $(id).addEventListener('keydown', menuKeys);
+  $('#btnAddEvent').addEventListener('click', () => edAddEvent());
+  $('#btnAddReport').addEventListener('click', () => edAddReport());
+  $('#btnAddCam').addEventListener('click', () => edAddCam());
+  $('#btnAddCue').addEventListener('click', () => edAddCue());
   $('#btnUndo').addEventListener('click', edUndo);
   $('#btnRedo').addEventListener('click', edRedo);
+  $('#btnDup').addEventListener('click', () => edDuplicateSel());
+  $('#btnDel').addEventListener('click', () => edDeleteSel());
   $('#btnZoomIn').addEventListener('click', () => edZoom(1.5));
   $('#btnZoomOut').addEventListener('click', () => edZoom(1 / 1.5));
   $('#btnFit').addEventListener('click', edFit);
-  $('#btnFromEasy').addEventListener('click', () => {
-    edPushUndo();
-    S.adv = easyDoc(); S.sel = null;
-    rebuild({ keepTime: true }); edInspector();
-    toast('Rebuilt from the Easy setup. Undo brings your timeline back.', 3200);
+  $('#btnResetAll').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const p = $('#resetPop');
+    if (!p.hidden) { edCloseMenu(); return; }
+    edCloseMenu();
+    p.hidden = false;
+    e.currentTarget.setAttribute('aria-expanded', 'true');
+    const first = p.querySelector('button');
+    if (first) first.focus();
   });
+  for (const b of $$('#resetPop [data-reset]')) b.addEventListener('click', (e) => { e.stopPropagation(); edCloseMenu(); edResetAll(b.dataset.reset); });
+  let tip = null;
+  try { tip = localStorage.getItem('quaker.v2.tltip'); } catch (e) { /* storage off */ }
+  edTips(tip !== 'off');
+  $('#btnTips').addEventListener('click', () => edTips($('#tlTips').hidden, true));
+  $('#btnTipsOff').addEventListener('click', () => edTips(false, true));
+  const inner = $('#tlInner');
+  inner.addEventListener('pointerdown', edPointerDown);
+  inner.addEventListener('dblclick', edDblClick);
+  inner.addEventListener('contextmenu', edContextMenu);
+  // the click that ends a long-press shouldn't also select or close the menu it opened
+  inner.addEventListener('click', (e) => { if (ED.lp.fired) { ED.lp.fired = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  $('#tlScroll').addEventListener('scroll', () => ctxClose(), { passive: true });
+  window.addEventListener('resize', () => ctxClose());
   $('#tlScroll').addEventListener('wheel', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
-    edZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    edZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX);
   }, { passive: false });
 }
 
@@ -5876,8 +6839,8 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const S = {
   DB: null, prefs: deepCopy(PREFS_DEFAULT), eff: null, mode: 'easy', easy: defaultEasy(), adv: null, doc: null, world: null,
   tau: T_START, state: 'idle', ended: false, originMs: Date.now(), originFixed: false, speed: 1, follow: true,
-  sel: null, pick: null, recording: false, saved: [], ready: false, stale: false, everPlayed: false,
-  undo: [], redo: [],
+  sel: null, multi: [], pick: null, recording: false, saved: [], ready: false, stale: false, everPlayed: false,
+  undo: [], redo: [], proj: null,
 };
 let needRender = true;
 const canvas = $('#stage');
@@ -5942,11 +6905,223 @@ function prefsChanged() { applyPrefs(); clearTimeout(prefTimer); prefTimer = set
 // ---------------------------------------------------------------- state persistence
 function saveState() {
   try {
-    localStorage.setItem('quaker.v2.state', JSON.stringify({ mode: S.mode, easy: S.easy, adv: S.adv, view: R.view, speed: S.speed, follow: S.follow }));
+    localStorage.setItem('quaker.v2.state', JSON.stringify({ mode: S.mode, easy: S.easy, adv: S.adv, view: R.view, speed: S.speed, follow: S.follow, proj: S.proj }));
   } catch (e) { /* storage off or full */ }
 }
 let stateTimer = 0;
-function saveStateSoon() { clearTimeout(stateTimer); stateTimer = setTimeout(saveState, 500); }
+function saveStateSoon() { clearTimeout(stateTimer); stateTimer = setTimeout(saveState, 500); projSaveSoon(); }
+
+// ---------------------------------------------------------------- projects
+// A project is one simulation you're working on: its Easy setup, its Advanced timeline (if it has one), the
+// view and a small cover picture. The open one saves itself as you go. Preloaded scenarios, real quakes and
+// imports open as new projects, so the originals never change.
+const PJ = { list: [], ok: true, loaded: false, timer: 0, lastSig: '', baseSig: '', query: '' };
+function projSig() { return JSON.stringify([S.mode, S.easy, S.mode === 'adv' ? S.adv : null]); }
+function projMeta(p) { return { id: p.id, name: p.name || 'Untitled project', created: p.created || Date.now(), updated: p.updated || Date.now(), src: p.src || '', pristine: !!p.pristine }; }
+function projThumb() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 180;
+    c.getContext('2d').drawImage(canvas, 0, 0, 320, 180);
+    return c.toDataURL('image/jpeg', 0.62);
+  } catch (e) { return ''; }
+}
+function projSummary() {
+  const w = S.world;
+  if (!w || !w.main) return null;
+  const E = w.main;
+  return { M: +E.ph.M.toFixed(1), place: E.name.en || E.name.ja || '', ja: E.name.ja || '', quakes: w.evs.length, real: w.doc.meta.kind === 'real' };
+}
+function projGuessName() {
+  const w = S.world;
+  if (!w || !w.main) return 'Untitled project';
+  const t = (w.doc.meta.title || '').trim();
+  return t || `${w.main.name.en || w.main.name.ja} M${w.main.ph.M.toFixed(1)}`;
+}
+function projUpsert(rec) {
+  const i = PJ.list.findIndex((p) => p.id === rec.id);
+  if (i >= 0) PJ.list[i] = rec; else PJ.list.push(rec);
+}
+async function projSaveNow() {
+  clearTimeout(PJ.timer);
+  if (!S.proj || !S.world || S.recording) return;
+  const sig = projSig();
+  if (sig !== PJ.lastSig) {
+    // view-only changes (pan, zoom) don't count as edits
+    if (PJ.lastSig) S.proj.updated = Date.now();
+    PJ.lastSig = sig;
+  }
+  if (S.proj.pristine && sig !== PJ.baseSig) S.proj.pristine = false;
+  const rec = { ...S.proj, mode: S.mode, easy: deepCopy(S.easy), adv: S.adv ? deepCopy(S.adv) : null, view: { ...R.view }, thumb: projThumb(), sum: projSummary() };
+  projUpsert(rec);
+  const r = await IDB.put(rec, 'projects');
+  PJ.ok = r !== null;
+  projChipUI();
+}
+function projSaveSoon() { clearTimeout(PJ.timer); PJ.timer = setTimeout(projSaveNow, 1200); }
+function sanitizeEasy(e) {
+  if (!e || !isFinite(+e.lat) || !isFinite(+e.lon)) return defaultEasy();
+  const o = { ...defaultEasy(), ...e };
+  o.extras = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
+  o.clock = { mode: 'now', start: '', tz: 'auto', ...(e.clock || {}) };
+  return o;
+}
+// swap the working state over to a project record
+function projLoad(p, fit) {
+  S.proj = projMeta(p);
+  S.easy = sanitizeEasy(p.easy);
+  let adv = null;
+  if (p.adv && typeof p.adv === 'object') { try { adv = normalizeDoc(deepCopy(p.adv)); } catch (e) { adv = null; } }
+  S.adv = adv;
+  S.undo = []; S.redo = []; S.sel = null; S.multi = [];
+  showMode(p.mode === 'adv' && S.adv ? 'adv' : 'easy');
+  rebuild();
+  if (p.view && isFinite(p.view.s)) setView(p.view.cx, p.view.cy, p.view.s);
+  else if (fit === 'midatl') setViewPreset('midatl');
+  else fitView();
+  if (S.mode === 'adv') { edFit(); edInspector(); }
+  PJ.baseSig = PJ.lastSig = projSig();
+  projUpsert({ ...p, ...S.proj });
+  projChipUI();
+  saveState();
+  projSaveSoon();
+}
+// open something as a new project. Browsing preloaded quakes reuses the open project while you haven't changed it,
+// so flicking through the library doesn't leave a pile of untouched projects behind.
+async function projStart(name, src, easy, adv = null, mode = 'easy', fit = '') {
+  if (S.recording) return;
+  await projSaveNow();
+  const browsing = /^(preset|real|feed):/.test(src);
+  const reuse = browsing && S.proj && S.proj.pristine && /^(preset|real|feed):/.test(S.proj.src) && projSig() === PJ.baseSig;
+  const now = Date.now();
+  const rec = { id: reuse ? S.proj.id : newId('p'), name, created: reuse ? S.proj.created : now, updated: now, src, pristine: true, mode, easy, adv, view: null, thumb: '' };
+  projLoad(rec, fit);
+}
+function projNewBlank(adv) {
+  const n = PJ.list.filter((p) => /^Untitled project/.test(p.name)).length;
+  const easy = { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras } };
+  projStart(n ? `Untitled project ${n + 1}` : 'Untitled project', 'new', easy, null, 'easy', 'midatl').then(() => {
+    if (adv) setMode('adv');
+    closeAllDialogs();
+    toast(adv ? 'New project, straight into the timeline.' : 'New project. Click the map to place the quake.', 2600);
+  });
+}
+async function projOpen(id) {
+  if (S.recording) return;
+  if (S.proj && S.proj.id === id) { closeAllDialogs(); return; }
+  await projSaveNow();
+  const p = PJ.list.find((x) => x.id === id);
+  if (!p) return;
+  projLoad(p);
+  closeAllDialogs();
+  toast(`Opened ${p.name}`, 1800);
+}
+async function projRename(id, name) {
+  name = String(name || '').trim().slice(0, 80);
+  if (!name) return;
+  if (S.proj && S.proj.id === id) { S.proj.name = name; S.proj.pristine = false; await projSaveNow(); saveState(); }
+  else {
+    const p = PJ.list.find((x) => x.id === id);
+    if (!p) return;
+    p.name = name; p.pristine = false;
+    await IDB.put(p, 'projects');
+  }
+  projChipUI();
+}
+async function projDuplicate(id) {
+  if (S.proj && S.proj.id === id) await projSaveNow();
+  const p = PJ.list.find((x) => x.id === id);
+  if (!p) return;
+  const now = Date.now();
+  let nm = (p.name + ' copy').slice(0, 80), k = 2;
+  while (PJ.list.some((x) => x.name === nm)) nm = `${p.name} copy ${k++}`.slice(0, 80);
+  const c = { ...deepCopy(p), id: newId('p'), name: nm, created: now, updated: now, pristine: false };
+  PJ.list.push(c);
+  await IDB.put(c, 'projects');
+  renderProjects();
+  toast(`Made ${c.name}`, 1600);
+}
+async function projDelete(id) {
+  PJ.list = PJ.list.filter((p) => p.id !== id);
+  await IDB.del(id, 'projects');
+  if (S.proj && S.proj.id === id) {
+    const next = PJ.list.slice().sort((a, b) => b.updated - a.updated)[0];
+    if (next) projLoad(next);
+    else {
+      const easy = { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras } };
+      projLoad({ id: newId('p'), name: 'Untitled project', src: 'new', pristine: false, mode: 'easy', easy, adv: null }, 'midatl');
+    }
+  }
+  renderProjects();
+}
+async function projExport(id) {
+  if (S.proj && S.proj.id === id) await projSaveNow();
+  const p = PJ.list.find((x) => x.id === id);
+  if (!p) return;
+  const dl = await getDownloads();
+  if (!dl) { toast('Saving files needs the Claude viewer. Use Share to copy a code instead.'); return; }
+  const body = p.mode === 'adv' && p.adv ? { m: 'adv', d: p.adv } : { m: 'easy', e: p.easy };
+  const data = JSON.stringify({ quaker: 2, name: p.name, savedAt: new Date().toISOString(), ...body }, null, 1);
+  const slug = p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'project';
+  try { await dl.save({ filename: `quaker-${slug}.json`, data }); toast(`Saved quaker-${slug}.json`, 2000); }
+  catch (e) { toast(dlErrorText(e, 'file')); }
+}
+// turn a share payload (code or file) into a new project
+function projFromPayload(o, name, src = 'code') {
+  if (!o) return;
+  if (o.m === 'adv' && o.d) {
+    const d = normalizeDoc(deepCopy(o.d));
+    return projStart(name || o.name || d.meta.title || 'Imported timeline', src, sanitizeEasy(S.easy), d, 'adv');
+  }
+  if (o.m === 'easy' && o.e) {
+    const e = sanitizeEasy({ ...o.e });
+    if (![e.lat, e.lon, e.M, e.depth].every((v) => isFinite(+v))) throw new Error('The code has values the simulator can’t use.');
+    return projStart(name || o.name || e.title || 'Imported scenario', src, e, null, 'easy');
+  }
+  throw new Error('That isn’t a Quaker scenario.');
+}
+function projChipUI() {
+  const chip = $('#projChip');
+  if (!chip || !S.proj) return;
+  $('#projName').textContent = S.proj.name;
+  chip.title = `Project: ${S.proj.name}. ${PJ.ok ? 'Saves itself as you go.' : 'This browser isn’t keeping it, so export it to keep it.'} Click for all projects.`;
+  chip.classList.toggle('warn', !PJ.ok);
+}
+function agoText(t) {
+  const s = (Date.now() - t) / 1000;
+  if (s < 50) return 'just now';
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 172800) return 'yesterday';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
+// load the saved list; the open project's newest state is the one already on screen
+async function projBoot() {
+  const recs = await IDB.all('projects');
+  PJ.ok = recs !== null;
+  for (const r of recs || []) if (r && r.id && !PJ.list.some((p) => p.id === r.id)) PJ.list.push(r);
+  const known = PJ.list.find((p) => p.id === S.proj.id);
+  if (known && !S.proj.name) Object.assign(S.proj, projMeta({ ...known, ...S.proj, name: known.name }));
+  if (!S.proj.name) S.proj.name = projGuessName();
+  // one time: scenarios from the old Saved tab become projects
+  let migrated = false;
+  try { migrated = localStorage.getItem('quaker.v2.projmig') === '1'; } catch (e) { /* storage off */ }
+  if (!migrated) {
+    for (const s of S.saved || []) {
+      const pl = s.payload || {};
+      const rec = { id: newId('p'), name: s.name || 'Saved scenario', created: s.at || Date.now(), updated: s.at || Date.now(), src: 'saved', pristine: false,
+        mode: pl.m === 'adv' && pl.d ? 'adv' : 'easy', easy: pl.m === 'easy' && pl.e ? pl.e : null, adv: pl.m === 'adv' ? pl.d : null, view: null, thumb: '', sum: null };
+      if (!rec.easy) rec.easy = defaultEasy();
+      PJ.list.push(rec);
+      await IDB.put(rec, 'projects');
+    }
+    try { localStorage.setItem('quaker.v2.projmig', '1'); } catch (e) { /* storage off */ }
+  }
+  PJ.baseSig = PJ.lastSig = projSig();
+  PJ.loaded = true;
+  projChipUI();
+  projSaveSoon();
+}
 function loadJSON(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
 function saveSaved() { try { localStorage.setItem('quaker.v2.saved', JSON.stringify(S.saved)); return true; } catch (e) { return false; } }
 
@@ -6206,7 +7381,7 @@ function doRender() {
   const adv = S.mode === 'adv';
   const out = renderFrame({
     world: S.world, tau: S.tau, prefs: S.eff, idle: S.state === 'idle', originMs: S.originMs, tStart: T_START,
-    selected: adv && S.sel && S.sel.kind === 'item' ? S.sel.id : null, showEvents: adv && S.state !== 'playing', pick: !!S.pick,
+    selected: adv ? edSelItemSet() : null, showEvents: adv && S.state !== 'playing', pick: !!S.pick,
     selEv: adv && S.sel && S.sel.kind === 'event' ? S.sel.id : null,
   });
   S.stale = out.stale;
@@ -6321,7 +7496,7 @@ canvas.addEventListener('pointerdown', (e) => {
       const hb = hitBox(p);
       if (hb) {
         const it = S.adv.items.find((i) => i.id === hb.id);
-        edSelect({ kind: 'item', id: hb.id });
+        edSelect({ kind: 'item', id: hb.id }, e.shiftKey || e.ctrlKey || e.metaKey);
         if (it && it.dock === 'free') boxDrag = { it, ox: p.x - it.x, oy: p.y - it.y, first: true };
         drag = null;
         return;
@@ -6432,7 +7607,8 @@ function bindTransport() {
   for (const b of [$('#btnRecord'), $('#btnRecord2')]) b.addEventListener('click', () => { if (S.recording) stopRecording(); else startRecording(); });
   $('#btnSaveVid').addEventListener('click', saveVideo);
   $('#btnDiscard').addEventListener('click', () => { discardRecording(); closeAllDialogs(); });
-  $('#btnLibrary').addEventListener('click', () => openLibrary('presets'));
+  $('#btnLibrary').addEventListener('click', () => openLibrary('projects'));
+  $('#projChip').addEventListener('click', () => openLibrary('projects'));
   $('#btnSettings').addEventListener('click', () => openSettings('display'));
   for (const b of [$('#btnShare'), $('#btnShare2')]) b.addEventListener('click', openShare);
   for (const d of $$('dialog')) {
@@ -6450,15 +7626,18 @@ function toggleFullscreen() {
     else toast('Fullscreen isn’t available in this view.');
   } catch (e) { toast('Fullscreen isn’t available in this view.'); }
 }
-function setMode(mode) {
-  if (S.recording || mode === S.mode) return;
-  if (mode === 'adv' && !S.adv) S.adv = easyDoc();
+function showMode(mode) {
   S.mode = mode;
   $('#modeEasy').checked = mode === 'easy'; $('#modeAdv').checked = mode === 'adv';
   $('#easyPanel').hidden = mode !== 'easy';
   $('#advPanel').hidden = mode !== 'adv';
   $('#stageHint').textContent = mode === 'adv' ? 'Click a box to select it · drag to pan · scroll or pinch to zoom' : 'Click the map to place the epicenter · drag to pan · scroll or pinch to zoom';
-  S.sel = null;
+}
+function setMode(mode) {
+  if (S.recording || mode === S.mode) return;
+  if (mode === 'adv' && !S.adv) S.adv = easyDoc();
+  showMode(mode);
+  S.sel = null; S.multi = [];
   rebuild({ keepTime: true });
   if (mode === 'adv') { edFit(); edInspector(); }
 }
@@ -6515,7 +7694,7 @@ function bindEasy() {
   vw.append(h('button', { type: 'button', class: 'btn ghost', text: 'Zoom out', onclick: () => { takeCamera(); zoomAt(730, H / 2, R.view.s / 1.6); needRender = true; } }));
   const load = async () => {
     const note = $('#loadNote');
-    try { const o = await decodeShare($('#codeIn').value); applyPayload(o); note.textContent = 'Loaded. Press Play.'; }
+    try { const o = await decodeShare($('#codeIn').value); await projFromPayload(o); note.textContent = 'Opened as a new project. Press Play.'; }
     catch (e) { note.textContent = e.message; }
   };
   $('#btnLoadCode').addEventListener('click', load);
@@ -6568,12 +7747,22 @@ function updateEasyUI() {
   $('#animPreset').value = ANIM_PRESETS[S.prefs.anim.preset] ? S.prefs.anim.preset : 'custom';
   $('#camDetect').checked = !!S.prefs.cam.detectZoom;
 }
-function loadPreset(id) {
+function presetEasy(id) {
   const p = PRESETS.find((q) => q.id === id);
-  if (!p) return;
-  const e = { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras }, clock: { mode: 'now', start: '', tz: S.easy.clock.tz === 'auto' ? 'auto' : S.easy.clock.tz },
+  if (!p) return null;
+  return { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras }, clock: { mode: 'now', start: '', tz: S.easy.clock.tz === 'auto' ? 'auto' : S.easy.clock.tz },
     lat: p.lat, lon: p.lon, M: p.M, depth: p.depth, strike: p.strike, preset: id, title: p.en, kind: 'scenario' };
-  loadEasy(e, { fit: id === 'md' ? 'midatl' : 'fit' });
+}
+// the Easy preset menu changes the open project
+function loadPreset(id) {
+  const e = presetEasy(id);
+  if (e) loadEasy(e, { fit: id === 'md' ? 'midatl' : 'fit' });
+}
+// the Library opens a preset as its own project
+function openPreset(id) {
+  const p = PRESETS.find((q) => q.id === id), e = presetEasy(id);
+  if (!e) return;
+  projStart(p.en, 'preset:' + id, e, null, 'easy', id === 'md' ? 'midatl' : '').then(() => { closeAllDialogs(); toast(`${p.en}. Press Play.`); });
 }
 function loadEasy(e, opts = {}) {
   e.extras = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
@@ -6588,11 +7777,10 @@ function loadEasy(e, opts = {}) {
   if (S.mode === 'adv') { edFit(); edInspector(); }
 }
 function loadReal(q) {
+  if (!q) return Promise.resolve();
   const e = easyFromReal(S.DB, q);
   e.my = S.easy.my; e.extras = { ...S.easy.extras };
-  loadEasy(e);
-  closeAllDialogs();
-  toast(`${q.en}. Press Play.`);
+  return projStart(q.en, 'real:' + q.id, e).then(() => { closeAllDialogs(); toast(`${q.en}. Press Play.`); });
 }
 
 // ---------------------------------------------------------------- share payloads
@@ -6651,26 +7839,86 @@ async function saveScenarioFile() {
 let libShow = null;
 function openLibrary(tab) {
   if (S.recording) return;
-  renderLibPresets(); renderRealList(); renderSaved();
+  renderProjects(); renderLibPresets(); renderRealList();
   openDialog('dlgLibrary');
-  libShow(tab || 'presets');
+  libShow(tab || 'projects');
   if (tab === 'real') setTimeout(() => $('#realSearch').focus(), 50);
+  // refresh the open project's card with a fresh cover and summary
+  projSaveNow().then(() => { if ($('#dlgLibrary').open) renderProjects(); });
+}
+function renderProjects() {
+  const root = $('#libProjects');
+  if (!root || !S.proj) return;
+  const keepFocus = document.activeElement && document.activeElement.id === 'pjSearch';
+  root.textContent = '';
+  const search = h('input', { type: 'search', id: 'pjSearch', placeholder: 'Find a project', 'aria-label': 'Find a project', autocomplete: 'off' });
+  search.value = PJ.query;
+  search.addEventListener('input', () => { PJ.query = search.value; renderProjects(); });
+  root.append(h('div', { class: 'row pj-top' },
+    h('button', { type: 'button', class: 'btn primary', text: '＋ New project', onclick: () => projNewBlank(false) }),
+    h('button', { type: 'button', class: 'btn', text: '＋ New Advanced project', title: 'Starts in the timeline editor', onclick: () => projNewBlank(true) }),
+    h('span', { style: 'flex:1' }), PJ.list.length > 4 ? search : null));
+  root.append(h('p', { class: 'note', text: 'Projects save themselves as you work. Preloaded scenarios, real quakes and imports each open as a new project, so the originals never change.' }));
+  if (!PJ.ok) root.append(h('p', { class: 'note warn', text: 'This browser isn’t keeping projects between visits (a private window, or site storage is off). Export the ones you want to keep.' }));
+  const q = PJ.query.trim().toLowerCase();
+  const list = PJ.list.filter((p) => !q || (p.name || '').toLowerCase().includes(q) || ((p.sum && p.sum.place) || '').toLowerCase().includes(q))
+    .sort((a, b) => (b.id === S.proj.id) - (a.id === S.proj.id) || (b.updated || 0) - (a.updated || 0));
+  const grid = h('div', { class: 'pjcards' });
+  for (const p of list) {
+    const cur = p.id === S.proj.id;
+    const name = cur ? S.proj.name : p.name;
+    const sum = p.sum;
+    const place = sum ? (enUI() ? sum.place : sum.ja || sum.place) : '';
+    const nameEl = h('div', { class: 'pj-name', text: name || 'Untitled project', title: name });
+    const rename = () => {
+      const inp = h('input', { type: 'text', class: 'pj-rename', maxlength: 80, 'aria-label': 'Project name' });
+      inp.value = name;
+      let done = false;
+      const commit = async (ok) => { if (done) return; done = true; if (ok && inp.value.trim() && inp.value.trim() !== name) await projRename(p.id, inp.value); renderProjects(); };
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); commit(false); } });
+      inp.addEventListener('blur', () => commit(true));
+      nameEl.replaceWith(inp); inp.focus(); inp.select();
+    };
+    let armed = false;
+    const del = h('button', { type: 'button', class: 'btn sm danger', text: 'Delete' });
+    del.addEventListener('click', () => {
+      if (!armed) { armed = true; del.textContent = 'Really delete?'; setTimeout(() => { armed = false; del.textContent = 'Delete'; }, 3000); return; }
+      projDelete(p.id);
+    });
+    grid.append(h('div', { class: 'pjcard' + (cur ? ' cur' : '') },
+      h('button', { type: 'button', class: 'pj-open', title: cur ? 'This is the project you have open' : 'Open ' + name, 'aria-label': (cur ? 'Back to ' : 'Open ') + name, onclick: () => projOpen(p.id) },
+        p.thumb ? h('img', { src: p.thumb, alt: '' }) : h('span', { class: 'pj-noimg', text: sum ? 'M' + sum.M.toFixed(1) : 'Q' }),
+        cur ? h('span', { class: 'pj-badge', text: 'Open now' }) : null),
+      h('div', { class: 'pj-body' }, nameEl,
+        h('div', { class: 'pj-sub', text: sum ? `M${sum.M.toFixed(1)} · ${place}${sum.quakes > 1 ? ` · ${sum.quakes} quakes` : ''}` : 'Open it once to fill in the details' }),
+        h('div', { class: 'pj-sub dim', text: `${p.mode === 'adv' ? 'Advanced timeline' : 'Easy'}${sum && sum.real ? ' · replay' : ''} · edited ${agoText(cur ? S.proj.updated : p.updated || Date.now())}` }),
+        h('div', { class: 'pj-acts' },
+          cur ? null : h('button', { type: 'button', class: 'btn sm primary', text: 'Open', onclick: () => projOpen(p.id) }),
+          h('button', { type: 'button', class: 'btn sm', text: 'Rename', onclick: rename }),
+          h('button', { type: 'button', class: 'btn sm', text: 'Duplicate', onclick: () => projDuplicate(p.id) }),
+          h('button', { type: 'button', class: 'btn sm', text: 'Export', title: 'Save as a .json file you can open anywhere', onclick: () => projExport(p.id) }),
+          del))));
+  }
+  root.append(grid);
+  if (!list.length) root.append(h('p', { class: 'note', text: q ? 'No project matches that.' : 'No projects yet.' }));
+  root.append(h('p', { class: 'note', style: 'margin-top:10px', text: 'Projects live in this browser. To move one to another device, use Export, or Share for a code.' }));
+  if (keepFocus) { const s2 = $('#pjSearch'); if (s2) { s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); } }
 }
 function renderLibPresets() {
   const root = $('#libPresets');
   root.textContent = '';
+  root.append(h('p', { class: 'note', style: 'margin:0 0 10px', text: 'Ready-made what-ifs. Opening one starts a new project from it, and the preloaded version never changes, so you can always come back to it.' }));
   for (const [grp, title] of [['us', 'United States'], ['jp', enUI() ? 'Japan' : 'Japan 日本']]) {
     root.append(h('h3', { text: title, style: 'margin:4px 0 8px' }));
     const g = h('div', { class: 'pcards' });
     for (const p of PRESETS.filter((q) => q.grp === grp)) {
-      g.append(h('button', { type: 'button', class: 'pcard', onclick: () => { loadPreset(p.id); closeAllDialogs(); toast(`${p.en}. Press Play.`); } },
+      g.append(h('button', { type: 'button', class: 'pcard', onclick: () => openPreset(p.id) },
         h('span', { class: 't', text: p.en.replace(/\s*M\d\.\d.*$/, '').replace(/\s*\(.*\)$/, '') || p.en }),
         p.ja ? h('span', { class: 'j ja', text: p.ja }) : null,
         h('span', { class: 'm', text: `M${p.M.toFixed(1)} · ${p.depth} km deep` })));
     }
     root.append(g);
   }
-  root.append(h('p', { class: 'note', style: 'margin-top:10px', text: 'Scenarios are what-ifs. Every one of them can be tweaked afterwards with the sliders or in Advanced.' }));
 }
 function levelChip(k) { return k ? shindoChip(SH_LABEL[k - 1]) : h('span', { class: 'shi', style: 'background:#2A3A4D;color:#B9C5D2', text: '0' }); }
 function shindoChip(maxStr) {
@@ -6698,30 +7946,34 @@ function renderRealList() {
   }
   if (!list.length) root.append(h('p', { class: 'note', text: 'Nothing matches that search.' }));
 }
-function renderSaved() {
-  const root = $('#savedList');
-  root.textContent = '';
-  if (!S.saved.length) { root.append(h('p', { class: 'note', text: 'Nothing saved yet.' })); return; }
-  for (const s of S.saved.slice().reverse()) {
-    let armed = false;
-    const del = h('button', { type: 'button', class: 'btn sm danger', text: 'Delete' });
-    del.addEventListener('click', () => {
-      if (!armed) { armed = true; del.textContent = 'Really delete?'; setTimeout(() => { armed = false; del.textContent = 'Delete'; }, 3000); return; }
-      S.saved = S.saved.filter((x) => x.id !== s.id); saveSaved(); renderSaved();
-    });
-    root.append(h('div', { class: 'li' },
-      h('div', {}, h('div', { text: s.name }), h('div', { class: 'sub', text: `${s.mode === 'adv' ? 'Advanced timeline' : 'Easy scenario'} · ${new Date(s.at).toLocaleString()}` })),
-      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn sm', text: 'Load', onclick: () => { try { applyPayload(s.payload); closeAllDialogs(); toast('Loaded ' + s.name); } catch (e) { toast(e.message); } } }), del)));
-  }
+// ---- imports
+const FEEDS = {
+  usgs: { label: 'USGS', url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson' },
+  p2p: { label: 'P2PQuake', url: 'https://api.p2pquake.net/v2/history?codes=551&limit=30' },
+  jma: { label: 'JMA', url: 'https://www.jma.go.jp/bosai/quake/data/list.json' },
+};
+const inClaude = () => !!(window.claude && typeof window.claude.use === 'function');
+async function fetchText(url, ms = 12000) {
+  const ac = new AbortController(), tm = setTimeout(() => ac.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ac.signal, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.text();
+  } finally { clearTimeout(tm); }
 }
-function saveLocal() {
-  const name = $('#saveName').value.trim() || (S.doc.meta.title || S.world.main.name.en || 'Scenario') + ` M${S.world.main.ph.M.toFixed(1)}`;
-  S.saved.push({ id: newId('s'), name, at: Date.now(), mode: S.mode, payload: deepCopy(sharePayload()) });
-  if (S.saved.length > 60) S.saved.shift();
-  if (!saveSaved()) { toast('This browser won’t store it. Use Share → Save scenario file instead.'); S.saved.pop(); return; }
-  $('#saveName').value = '';
-  renderSaved();
-  toast('Saved in this browser.');
+async function fetchFeed(k) {
+  const f = FEEDS[k], note = $('#importNote');
+  $('#importList').textContent = '';
+  note.textContent = `Getting the latest from ${f.label}…`;
+  try {
+    const t = await fetchText(f.url);
+    $('#importText').value = t.length > 200000 ? t.slice(0, 2000) + '…' : t;
+    await doImport(t);
+  } catch (e) {
+    note.textContent = inClaude()
+      ? `This copy can’t reach ${f.label} by itself, because Claude keeps pages sandboxed. Use the copy and paste steps below. On the GitHub Pages version this button works.`
+      : `Couldn’t reach ${f.label} (${e.name === 'AbortError' ? 'it took too long' : 'the site said no or you’re offline'}). The copy and paste steps below always work.`;
+  }
 }
 async function doImport(text) {
   const note = $('#importNote'), list = $('#importList');
@@ -6729,37 +7981,44 @@ async function doImport(text) {
   const s = String(text || '').trim();
   if (!s) { note.textContent = 'Paste something first.'; return; }
   try {
-    if (/^QK[12]U?-/.test(s)) { applyPayload(await decodeShare(s)); closeAllDialogs(); toast('Loaded. Press Play.'); return; }
+    if (/^QK[12]U?-/.test(s)) { await projFromPayload(await decodeShare(s)); closeAllDialogs(); toast('Opened as a new project. Press Play.'); return; }
     let o = null;
     try { o = JSON.parse(s); } catch (e) { /* not JSON */ }
-    if (o && (o.m === 'easy' || o.m === 'adv')) { applyPayload(o); closeAllDialogs(); toast('Loaded. Press Play.'); return; }
-    if (o && o.v === 2 && Array.isArray(o.events)) { applyPayload({ m: 'adv', d: o }); closeAllDialogs(); toast('Loaded. Press Play.'); return; }
+    if (o && (o.m === 'easy' || o.m === 'adv')) { await projFromPayload(o, o.name, 'file'); closeAllDialogs(); toast('Opened as a new project. Press Play.'); return; }
+    if (o && o.v === 2 && Array.isArray(o.events)) { await projFromPayload({ m: 'adv', d: o }, null, 'file'); closeAllDialogs(); toast('Opened as a new project. Press Play.'); return; }
     const qs = importText(S.DB, s);
     if (qs.length === 1) { loadImported(qs[0]); return; }
-    note.textContent = `Found ${qs.length} quakes. Pick one.`;
+    note.textContent = `Found ${qs.length} quakes. Pick one and it opens as a new project.`;
     for (const q of qs.slice(0, 80)) {
       const t = isFinite(q.time) ? new Date(q.time).toISOString().slice(0, 16).replace('T', ' ') : '';
       list.append(h('button', { type: 'button', class: 'qrow', onclick: () => loadImported(q) },
         h('span', { class: 'd', text: t.slice(0, 10).replace(/-/g, '/') }), h('span', { class: 'mg', text: 'M' + (+q.M).toFixed(1) }),
-        h('span', { class: 'n' }, h('b', { text: enUI() ? q.title : q.ja || q.title }), h('span', { text: `${q.src} · ${t} UTC · ${Math.round(q.depth)} km` })),
+        h('span', { class: 'n' }, h('b', { text: enUI() ? q.en || q.title : q.ja || q.title }), h('span', { text: `${q.src} · ${t} UTC · ${Math.round(q.depth)} km` })),
         q.max >= 0 ? shindoChip(SH_LABEL[q.max]) : h('span')));
     }
   } catch (e) { note.textContent = e.message; }
 }
-function loadImported(q) {
+async function loadImported(q) {
+  // a quake from JMA's list: grab its full report for the real intensity map when this page is allowed to
+  if (q.json && !inClaude()) {
+    $('#importNote').textContent = 'Getting the intensity report…';
+    try {
+      const d = importText(S.DB, await fetchText('https://www.jma.go.jp/bosai/quake/data/' + encodeURIComponent(q.json), 10000));
+      if (d.length) q = { ...d[0], en: q.en, id: q.id };
+    } catch (e) { /* the list's max intensity will do */ }
+  }
   const e = easyFromImport(S.DB, q);
   e.my = S.easy.my; e.extras = { ...S.easy.extras };
-  loadEasy(e);
+  await projStart(enUI() && q.en ? q.en : q.title, 'feed:' + (q.id || q.src), e);
   closeAllDialogs();
-  toast(`${q.src}: ${q.title}. Press Play.`);
+  toast(`${q.src}: ${enUI() && q.en ? q.en : q.title}. Press Play.`);
 }
 function bindLibrary() {
   libShow = bindTabs($('#libTabs'), $('#dlgLibrary'));
   $('#realSearch').addEventListener('input', renderRealList);
   for (const r of $$('input[name=realReg]')) r.addEventListener('change', renderRealList);
-  $('#btnSaveLocal').addEventListener('click', saveLocal);
-  $('#saveName').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveLocal(); });
   $('#btnImport').addEventListener('click', () => doImport($('#importText').value));
+  for (const b of $$('[data-feed]')) b.addEventListener('click', () => fetchFeed(b.dataset.feed));
   $('#importFile').addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -7040,7 +8299,13 @@ function loadFontsFor(world) {
 // ---------------------------------------------------------------- keyboard
 function bindKeys() {
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { if (S.pick) { endPick(); e.preventDefault(); } edCloseMenu(); return; }
+    if (e.key === 'Escape') {
+      if (S.pick) { endPick(); e.preventDefault(); edCloseMenu(); return; }
+      if ($$('dialog').some((d) => d.open)) return;
+      if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) { edCloseMenu(); return; }
+      if (edEscape()) e.preventDefault();
+      return;
+    }
     if ($$('dialog').some((d) => d.open)) return;
     const tag = (e.target && e.target.tagName) || '';
     const typing = /INPUT|SELECT|TEXTAREA/.test(tag) && !(tag === 'INPUT' && /range|checkbox|radio/.test(e.target.type));
@@ -7048,6 +8313,9 @@ function bindKeys() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && (e.key === 'z' || e.key === 'Z')) { if (S.mode === 'adv') { e.preventDefault(); if (e.shiftKey) edRedo(); else edUndo(); } return; }
     if (mod && (e.key === 'y' || e.key === 'Y')) { if (S.mode === 'adv') { e.preventDefault(); edRedo(); } return; }
+    if (mod && (e.key === 'a' || e.key === 'A') && S.mode === 'adv') { e.preventDefault(); edSelectAll(); return; }
+    if (mod && (e.key === 'd' || e.key === 'D') && S.mode === 'adv') { e.preventDefault(); edDuplicateSel(); return; }
+    if (e.altKey && !mod && S.mode === 'adv' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); edMoveRow(e.key === 'ArrowUp' ? -1 : 1); return; }
     if (mod || e.altKey) return;
     if (tag === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
     const k = e.key;
@@ -7070,6 +8338,9 @@ function bindKeys() {
     else if (S.mode === 'adv' && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); edDeleteSel(); }
     else if (S.mode === 'adv' && (k === 'd' || k === 'D')) edDuplicateSel();
     else if (S.mode === 'adv' && (k === '[' || k === ']')) edNudgeSel(k === '[' ? -0.5 : 0.5);
+    else if (S.mode === 'adv' && (k === '{' || k === '}')) edNudgeSel(k === '{' ? -0.1 : 0.1);
+    else if (S.mode === 'adv' && (k === 's' || k === 'S')) edSplitSel();
+    else if (S.mode === 'adv' && (k === 'h' || k === 'H')) edToggleHideSel();
   });
 }
 
@@ -7113,6 +8384,8 @@ async function boot() {
     if (typeof st.speed === 'number') S.speed = st.speed;
     if (typeof st.follow === 'boolean') S.follow = st.follow;
   }
+  // the open project: the one the saved state belongs to, or a fresh one wrapped around it
+  S.proj = st && st.proj && st.proj.id ? { ...projMeta(st.proj), name: st.proj.name || '' } : { id: newId('p'), name: '', created: Date.now(), updated: Date.now(), src: '', pristine: false };
   for (const r of $$('input[name=speed]')) r.checked = +r.value === S.speed;
   $('#btnCam').setAttribute('aria-pressed', String(S.follow));
   R.camHold = !S.follow;
@@ -7124,11 +8397,13 @@ async function boot() {
   $('#loading').hidden = true;
   applyPrefs();
   needRender = true;
+  projBoot();
   window.__quaker = {
     S, R, AU, REC, ED,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
-      edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles },
+      edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles,
+      projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt },
   };
 }
 boot();
