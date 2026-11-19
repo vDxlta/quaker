@@ -329,6 +329,17 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .sync-err { color: #F2B53A; }
 .sync-btns { flex-wrap: wrap; }
 .sync-btns a.btn { text-decoration: none; }
+.seq-steps { list-style: none; counter-reset: seq; margin: 0; padding: 0; display: grid; gap: 2px; }
+.seq-steps > li { counter-increment: seq; position: relative; padding-left: 30px; }
+.seq-steps > li::before { content: counter(seq); position: absolute; left: 0; top: 9px; width: 20px; height: 20px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); font: 600 12px/18px var(--font-num); text-align: center; }
+.seq-steps > li:not(:last-child)::after { content: ""; position: absolute; left: 10px; top: 31px; bottom: -4px; width: 1px; background: var(--line); }
+.seq .check small.hint { display: block; color: var(--faint); font-size: 12px; margin-top: 1px; }
+.seq .check.sub { margin-left: 26px; }
+.seq .check.off { opacity: 0.45; }
+.seq-pop { width: 380px; padding: 10px 12px; }
+.seq-pop .seq .check { padding: 5px 0; }
+.seq-pop > .row { margin-top: 8px; }
+.seq-mh { font-family: var(--font-num); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 12px 0 4px; }
 .font-roles { gap: 10px; }
 .font-role { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
 .font-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
@@ -576,9 +587,9 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
     </section>
 
     <section class="card" aria-labelledby="ibH">
-      <h2 id="ibH">Info boxes<span class="ja">情報</span></h2>
-      <div class="list" id="extras"></div>
-      <p class="note">EEW, countdown and the intensity report are always on. The rest only appear when the quake calls for them. For exact timing, colors and your own alerts, switch to <b>Advanced</b>.</p>
+      <h2 id="ibH">Event sequence<span class="ja">情報の流れ</span></h2>
+      <p class="note">In the order a real broadcast shows them, timed from the quake itself. Untick any step you don’t want. Some only show up when the quake calls for them. For exact timing, colors and your own alerts, switch to <b>Advanced</b>.</p>
+      <div id="extras"></div>
     </section>
 
     <section class="card" aria-labelledby="mcH">
@@ -646,9 +657,14 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
       </div>
       <span class="grow" aria-hidden="true"></span>
       <div class="menu-wrap">
+        <button class="btn" id="btnSeq" type="button" aria-haspopup="true" aria-expanded="false" title="Put a quake's boxes on the timeline in the order a real broadcast shows them">Realistic sequence…</button>
+        <div class="menu pop seq-pop" id="seqPop" hidden></div>
+      </div>
+      <div class="menu-wrap">
         <button class="btn amber" id="btnResetAll" type="button" aria-haspopup="true" aria-expanded="false">Reset all…</button>
         <div class="menu pop" id="resetPop" role="menu" hidden>
           <div class="mh">Reset the timeline</div>
+          <button type="button" role="menuitem" data-reset="clear"><b>Clear everything</b><small>An empty timeline: no boxes, EEW reports, title cards, camera keys or sound cues. Your quakes stay, with their automatic EEW off, so you can build it up yourself.</small></button>
           <button type="button" role="menuitem" data-reset="keep"><b>Reset everything but the quakes</b><small>Keeps your quakes and scenario settings. Rebuilds the EEW reports and standard boxes from the physics, and clears camera keys and sound cues.</small></button>
           <button type="button" role="menuitem" data-reset="easy"><b>Start over from the Easy setup</b><small>Replaces the whole timeline, quakes included, with what Easy mode has.</small></button>
           <button type="button" role="menuitem" data-reset="time"><b>Just re-time the standard boxes</b><small>Moves the EEW panel, flash, report and alerts back to their automatic times. Nothing gets deleted.</small></button>
@@ -1955,8 +1971,9 @@ const BOX_TYPES = {
   timestamp: { label: 'Timestamp', ja: 'タイムスタンプ', dock: 'left', w: 0, slot: null, color: '#5E7086' },
   banner: { label: 'Top banner', ja: 'バナー', dock: 'top', w: W, slot: 'alert', color: '#D41F2E' },
   ticker: { label: 'News ticker', ja: 'テロップ', dock: 'bottom', w: W, slot: null, color: '#C8102E' },
+  card: { label: 'Title card', ja: 'タイトル画面', dock: 'over', w: W, slot: 'intro', color: '#8E5BD6' },
 };
-const TYPE_ORDER = ['eew', 'countdown', 'flash', 'epicenter', 'report', 'tsunami', 'megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide', 'custom', 'timestamp', 'banner', 'ticker'];
+const TYPE_ORDER = ['eew', 'countdown', 'flash', 'epicenter', 'report', 'tsunami', 'megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide', 'custom', 'timestamp', 'banner', 'ticker', 'card'];
 const SEVERITY = {
   info: { label: 'Information (blue)', col: '#1F5BB0' },
   advisory: { label: 'Advisory (amber)', col: '#F2B000' },
@@ -2099,7 +2116,28 @@ function normIntro(o) {
 }
 // a new project keeps the look of the last intro but not its words
 function introCarry(o) { const x = normIntro(o); return { ...x, kicker: '', title: '', sub: '', body: '' }; }
-const EXTRAS_DEFAULT = { flash: true, tsunami: true, megaquake: true, longperiod: false, aftershock: false, liquefaction: false, landslide: false, ticker: false, timestamp: false };
+// The sequence a real broadcast runs through, in order, and the extra info that can follow it. Easy turns these on
+// and off; Advanced builds the same thing for any quake.
+const EXTRAS_DEFAULT = { countdown: true, eew: true, eewStandby: false, flash: true, epicenter: true, report: true, tsunami: true,
+  megaquake: true, longperiod: false, aftershock: false, liquefaction: false, landslide: false, ticker: false, timestamp: false };
+const SEQ_STEPS = [
+  ['countdown', 'S-wave arrival', 'S波到達予想', 'Comes up as soon as the shaking is detected.'],
+  ['eew', 'Earthquake early warning', '緊急地震速報', 'Off means this quake gets no EEW at all, like a small or far one.'],
+  ['flash', 'Intensity flash', '震度速報', 'Once the strong shaking is mostly over.'],
+  ['epicenter', 'Epicenter info', '震源に関する情報', 'Where it was, how big and how deep.'],
+  ['report', 'Epicenter & intensity report', '震源・震度に関する情報', 'The full report with the intensity map.'],
+  ['tsunami', 'Tsunami info', '津波情報', 'Only when the quake can make one.'],
+];
+const SEQ_MORE = [
+  ['megaquake', 'Nankai / follow-up quake info (Japan)', '臨時情報'],
+  ['longperiod', 'Long-period ground motion', '長周期地震動'],
+  ['aftershock', 'Aftershock outlook', '地震活動の見通し'],
+  ['liquefaction', 'Liquefaction risk', '液状化'],
+  ['landslide', 'Landslide risk', '土砂災害'],
+  ['ticker', 'News ticker along the bottom', 'テロップ'],
+  ['timestamp', 'Origin time box', '発生時刻'],
+];
+const SEQ_TYPES = ['eew', 'countdown', 'flash', 'epicenter', 'report', 'tsunami', 'megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide', 'ticker', 'timestamp'];
 function defaultEasy() {
   return { lat: 39.23, lon: -76.93, M: 6.6, depth: 10, strike: 40, my: null, extras: { ...EXTRAS_DEFAULT },
     clock: { mode: 'now', start: '', tz: 'auto' }, name: null, targetMax: null, obsMap: null, kind: 'scenario', title: 'Central Maryland M6.6', preset: 'md', source: '', country: 'auto',
@@ -2129,6 +2167,7 @@ function itemDefaults(type) {
     case 'timestamp': return { label: '発生時刻', sub: 'ORIGIN TIME', source: 'origin', custom: '', fmt: 'datetime', big: true };
     case 'banner': return { text: '緊急地震速報　強い揺れに警戒', sub: 'EARTHQUAKE EARLY WARNING · STRONG SHAKING EXPECTED', sev: 'warning', color: '#D41F2E', blink: true, icon: 'quake' };
     case 'ticker': return { auto: true, messages: '', speed: 150, label: '速報', sev: 'warning', color: '#C8102E' };
+    case 'card': return { style: 'card', kicker: '', title: '', sub: '', body: '', facts: true, note: false, bar: true, color: '#E8101E', blur: 14, dim: 0.35, hide: true };
     default: return {};
   }
 }
@@ -2145,7 +2184,9 @@ function generateDoc(DB, e) {
   const ev = { id: 'e1', t0: 0, lat: +e.lat, lon: +e.lon, depth: +e.depth, M: +e.M, strike: +e.strike || 0, shaking: true, bias: 0,
     targetMax: e.targetMax ?? null, name: e.name || null, obsMap: e.obsMap || null, eewAuto: true, tune: {}, country: e.country || 'auto' };
   const ph = buildPhysics(DB, ev);
-  const reps = genEEW(DB, ph, ev.tune).map((r) => ({ id: newId('r'), ev: 'e1', ...r, maxOverride: null }));
+  const X = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
+  if (!X.eew) ev.eewAuto = false;
+  const reps = X.eew ? genEEW(DB, ph, ev.tune).map((r) => ({ id: newId('r'), ev: 'e1', ...r, maxOverride: null })) : [];
   const doc = {
     v: DOC_V,
     meta: { title: e.title || '', kind: e.kind || 'scenario', source: e.source || '', note: '' },
@@ -2163,41 +2204,87 @@ function generateDoc(DB, e) {
   doc.items = defaultItemsFor(DB, doc, e.extras);
   return doc;
 }
-// The standard boxes for a doc's quakes: what a fresh Easy scenario gets for the first quake (EEW, countdown,
-// flash, report and the alerts its extras turn on), and an EEW panel for each quake after it.
+// When each step of the sequence comes, from the quake's physics and its EEW reports (seconds after its origin).
+// Intensity flash once the strong shaking is mostly over, epicenter info after that, then the full report; the
+// live boxes (S-wave arrival, EEW) leave as the first of those arrives.
+function seqTimes(ph, reps, X) {
+  const tm = autoTiming(ph, reps, { flash: !!X.flash });
+  const tF = X.flash && tm.tFlashR !== null ? tm.tFlashR : null;
+  let tE = null, tR = tm.tReport;
+  if (X.epicenter) {
+    tE = tF !== null ? tF + 10 : Math.max((tm.tLast ?? 5) + 6, tm.tReport - 12, 12);
+    if (tR < tE + 10) tR = tE + 10;
+  }
+  const firsts = [tF, tE, X.report !== false ? tR : null].filter((v) => v !== null);
+  const tLive = firsts.length ? Math.min(...firsts) : tR;
+  const tTsu = Math.max((tF ?? tE ?? tR) + 1.5, (tm.tLast ?? 0) + 3);
+  return { tm, tF, tE, tR: +tR.toFixed(1), tLive, tTsu, tDet: ph.tDet };
+}
+// One quake's run of boxes, in broadcast order. first = the scenario's main quake (its live boxes can start
+// before it does, and its countdown follows whichever quake is warning)
+function seqItemsFor(DB, doc, ev, X, first) {
+  const ph = buildPhysics(DB, ev);
+  const reps = doc.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t).map((r) => ({ ...r, t: r.t - ev.t0 }));
+  const S = seqTimes(ph, reps, X);
+  const T = (v) => +(v + ev.t0).toFixed(2);
+  const items = [];
+  const tDet = S.tDet ?? (reps[0] ? reps[0].t - 2 : 2);
+  // timeline rows in the same order they stack: EEW on top, the S-wave arrival under it
+  if (X.eew && reps.length) {
+    const stand = first && !!X.eewStandby;
+    items.push(mkItem('eew', ev.id, stand ? -3 : T(reps[0].t), T(Math.max(S.tLive, reps[reps.length - 1].t + 4)), { ...itemDefaults('eew'), standby: stand }));
+  }
+  if (X.countdown && ph.shaking && X.eew && reps.length) items.push(mkItem('countdown', first ? 'auto' : ev.id, T(Math.max(tDet, -3 - ev.t0)), T(S.tLive), { ...itemDefaults('countdown'), standby: true }));
+  if (S.tF !== null) items.push(mkItem('flash', ev.id, T(S.tF), T(S.tE ?? (X.report !== false ? S.tR : S.tF + 30)), itemDefaults('flash')));
+  if (S.tE !== null) items.push(mkItem('epicenter', ev.id, T(S.tE), X.report !== false ? T(S.tR) : null, itemDefaults('epicenter')));
+  if (X.report !== false) items.push(mkItem('report', ev.id, T(S.tR), null, itemDefaults('report')));
+  let tAux = S.tR + 3;
+  const later = () => { const t = tAux; tAux += 2.5; return T(t); };
+  if (X.tsunami && ph.shaking && tsunamiFor(DB, ph).max >= 0) items.push(mkItem('tsunami', ev.id, T(S.tTsu), null, itemDefaults('tsunami')));
+  if (X.megaquake && megaquakeFor(ph)) items.push(mkItem('megaquake', ev.id, later(), null, itemDefaults('megaquake')));
+  if (X.longperiod && longPeriodFor(DB, ph).max >= 1) items.push(mkItem('longperiod', ev.id, later(), null, itemDefaults('longperiod')));
+  if (X.aftershock) items.push(mkItem('aftershock', ev.id, later(), null, itemDefaults('aftershock')));
+  if (X.liquefaction && liquefactionFor(DB, ph).level) items.push(mkItem('liquefaction', ev.id, later(), null, itemDefaults('liquefaction')));
+  if (X.landslide && landslideFor(DB, ph).level) items.push(mkItem('landslide', ev.id, later(), null, itemDefaults('landslide')));
+  if (X.timestamp) items.push(mkItem('timestamp', ev.id, T(tDet), null, itemDefaults('timestamp')));
+  if (X.ticker) items.push(mkItem('ticker', ev.id, T((reps[0] ? reps[0].t : tDet) + 0.6), null, itemDefaults('ticker')));
+  return items;
+}
+// The standard boxes for a doc's quakes: the full sequence for the first quake (as its extras ask), and an EEW
+// panel for each quake after it. Advanced's sequence builder gives any quake the full run.
 function defaultItemsFor(DB, doc, extras) {
   const X = { ...EXTRAS_DEFAULT, ...(extras || {}) };
   const items = [];
   doc.events.forEach((ev, k) => {
+    if (k === 0) { items.push(...seqItemsFor(DB, doc, ev, X, true)); return; }
+    const reps = doc.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t);
+    if (!reps.length) return;
     const ph = buildPhysics(DB, ev);
-    const reps = doc.eew.filter((r) => r.ev === ev.id).sort((a, b) => a.t - b.t).map((r) => ({ ...r, t: r.t - ev.t0 }));
-    const tm = autoTiming(ph, reps, { flash: X.flash });
-    const T = (v) => +(v + ev.t0).toFixed(2);
-    const tLive = X.flash && tm.tFlashR !== null ? tm.tFlashR : tm.tReport;
-    if (k > 0) {
-      if (reps.length) items.push(mkItem('eew', ev.id, T(reps[0].t - 0.2), T(Math.max(reps[reps.length - 1].t + 20, tLive)), { ...itemDefaults('eew'), standby: false }));
-      return;
-    }
-    items.push(mkItem('eew', ev.id, -3, T(tLive), itemDefaults('eew')));
-    items.push(mkItem('countdown', 'auto', -3, T(tLive), itemDefaults('countdown')));
-    if (X.flash && tm.tFlashR !== null) items.push(mkItem('flash', ev.id, T(tm.tFlashR), T(tm.tReport), itemDefaults('flash')));
-    items.push(mkItem('report', ev.id, T(tm.tReport), null, itemDefaults('report')));
-    let tAux = tm.tReport + 3;
-    const later = () => { const t = tAux; tAux += 2.5; return T(t); };
-    if (X.tsunami && ph.shaking && tsunamiFor(DB, ph).max >= 0) items.push(mkItem('tsunami', ev.id, T(Math.max((tm.tFlashR ?? tm.tReport) + 1.5, (tm.tLast ?? 0) + 3)), null, itemDefaults('tsunami')));
-    if (X.megaquake && megaquakeFor(ph)) items.push(mkItem('megaquake', ev.id, later(), null, itemDefaults('megaquake')));
-    if (X.longperiod && longPeriodFor(DB, ph).max >= 1) items.push(mkItem('longperiod', ev.id, later(), null, itemDefaults('longperiod')));
-    if (X.aftershock) items.push(mkItem('aftershock', ev.id, later(), null, itemDefaults('aftershock')));
-    if (X.liquefaction && liquefactionFor(DB, ph).level) items.push(mkItem('liquefaction', ev.id, later(), null, itemDefaults('liquefaction')));
-    if (X.landslide && landslideFor(DB, ph).level) items.push(mkItem('landslide', ev.id, later(), null, itemDefaults('landslide')));
-    if (X.timestamp) items.push(mkItem('timestamp', ev.id, T(ph.tDet ?? 2), null, itemDefaults('timestamp')));
-    if (X.ticker) items.push(mkItem('ticker', ev.id, T((reps[0] ? reps[0].t : 3) + 0.6), null, itemDefaults('ticker')));
+    const S = seqTimes(ph, reps.map((r) => ({ ...r, t: r.t - ev.t0 })), X);
+    items.push(mkItem('eew', ev.id, +(reps[0].t - 0.2).toFixed(2), +Math.max(reps[reps.length - 1].t + 20, S.tLive + ev.t0).toFixed(2), { ...itemDefaults('eew'), standby: false }));
   });
   return items;
 }
+// Advanced: give one quake the realistic run of boxes, replacing the standard boxes it had (custom alerts,
+// banners, title cards, camera keys and sound cues stay)
+function buildSequence(DB, doc, evId, X0, lang) {
+  const ev = doc.events.find((e) => e.id === evId);
+  if (!ev) return 0;
+  const X = { ...EXTRAS_DEFAULT, ...(X0 || {}) };
+  const first = ev === doc.events[0];
+  if (X.eew) { if (!doc.eew.some((r) => r.ev === ev.id)) { ev.eewAuto = true; refreshAutoEEW(DB, doc, ev.id); } }
+  else { ev.eewAuto = false; doc.eew = doc.eew.filter((r) => r.ev !== ev.id); }
+  doc.items = doc.items.filter((it) => !(SEQ_TYPES.includes(it.type) && (it.ev === ev.id || (first && it.ev === 'auto'))));
+  const fresh = seqItemsFor(DB, doc, ev, X, first).map((it) => (lang === 'en' ? { ...it, data: localizeDefaults(it.type, it.data, 'en') } : it));
+  doc.items.push(...fresh);
+  doc.duration = null;
+  return fresh.length;
+}
 // Advanced "Reset all": keep the quakes (and the scenario settings), rebuild everything on the timeline from the physics
 function resetDocTimeline(DB, doc, extras, lang) {
+  const X = { ...EXTRAS_DEFAULT, ...(extras || {}) };
   for (const ev of doc.events) ev.eewAuto = true;
+  if (!X.eew) doc.events[0].eewAuto = false;
   doc.eew = [];
   refreshAutoEEW(DB, doc);
   doc.items = defaultItemsFor(DB, doc, extras).map((it) => (lang === 'en' ? { ...it, data: localizeDefaults(it.type, it.data, 'en') } : it));
@@ -2214,6 +2301,7 @@ function normalizeDoc(d) {
   doc.clock = { mode: 'now', start: '', tz: 'auto', ...(doc.clock || {}) };
   doc.duration = typeof doc.duration === 'number' && doc.duration > 5 ? doc.duration : null;
   doc.intro = normIntro(doc.intro);
+  doc.stack = doc.stack === 'time' ? 'time' : 'priority';
   const num = (v, dflt) => (typeof v === 'number' && isFinite(v) ? v : (typeof v === 'string' && v !== '' && isFinite(+v) ? +v : dflt));
   doc.events = (Array.isArray(doc.events) ? doc.events : []).filter((e) => e && typeof e === 'object').map((e, i) => ({
     id: e.id || 'e' + (i + 1), t0: num(e.t0, 0), lat: clamp(num(e.lat, 39.2), -80, 80), lon: num(e.lon, -76.9), depth: clamp(num(e.depth, 10), 0, 700),
@@ -2269,18 +2357,21 @@ function refreshAutoEEW(DB, doc, onlyEv) {
 function autoTimeItems(DB, doc) {
   for (const ev of doc.events) {
     const ph = buildPhysics(DB, ev);
-    const reps = doc.eew.filter((r) => r.ev === ev.id).map((r) => ({ ...r, t: r.t - ev.t0 }));
-    const its = doc.items.filter((it) => it.ev === ev.id || (it.ev === 'auto' && ev === doc.events[0]));
-    const hasFlash = its.some((it) => it.type === 'flash');
-    const tm = autoTiming(ph, reps, { flash: hasFlash });
+    const reps = doc.eew.filter((r) => r.ev === ev.id).map((r) => ({ ...r, t: r.t - ev.t0 })).sort((a, b) => a.t - b.t);
+    const first = ev === doc.events[0];
+    const its = doc.items.filter((it) => it.ev === ev.id || (it.ev === 'auto' && first));
+    const has = (t) => its.some((it) => it.type === t);
+    const Q = seqTimes(ph, reps, { flash: has('flash'), epicenter: has('epicenter'), report: has('report') });
     const T = (v) => +(v + ev.t0).toFixed(2);
-    const tLive = hasFlash && tm.tFlashR !== null ? tm.tFlashR : tm.tReport;
-    let tAux = tm.tReport + 3;
+    const tDet = Q.tDet ?? (reps[0] ? reps[0].t - 2 : 2);
+    let tAux = Q.tR + 3;
     for (const it of its) {
-      if (it.type === 'eew' || it.type === 'countdown') { it.t0 = ev === doc.events[0] ? -3 : T((reps[0]?.t ?? 3) - 0.2); it.t1 = T(tLive); }
-      else if (it.type === 'flash') { it.t0 = T(tm.tFlashR ?? tm.tReport - 12); it.t1 = T(tm.tReport); }
-      else if (it.type === 'report' || it.type === 'epicenter') { it.t0 = T(tm.tReport); it.t1 = null; }
-      else if (it.type === 'tsunami') { it.t0 = T(Math.max((tm.tFlashR ?? tm.tReport) + 1.5, (tm.tLast ?? 0) + 3)); }
+      if (it.type === 'eew') { it.t0 = it.data.standby && first ? -3 : T((reps[0]?.t ?? 3) - (first ? 0 : 0.2)); it.t1 = T(Math.max(Q.tLive, (reps[reps.length - 1]?.t ?? 0) + 4)); }
+      else if (it.type === 'countdown') { it.t0 = it.data.standby ? T(Math.max(tDet, -3 - ev.t0)) : first ? -3 : T((reps[0]?.t ?? 3) - 0.2); it.t1 = T(Q.tLive); }
+      else if (it.type === 'flash') { it.t0 = T(Q.tF ?? Q.tR - 12); it.t1 = T(Q.tE ?? Q.tR); }
+      else if (it.type === 'epicenter') { it.t0 = T(Q.tE ?? Q.tR - 10); it.t1 = has('report') ? T(Q.tR) : null; }
+      else if (it.type === 'report') { it.t0 = T(Q.tR); it.t1 = null; }
+      else if (it.type === 'tsunami') { it.t0 = T(Q.tTsu); }
       else if (['megaquake', 'longperiod', 'aftershock', 'liquefaction', 'landslide', 'custom'].includes(it.type)) { it.t0 = T(tAux); tAux += 2.5; }
     }
   }
@@ -3009,11 +3100,45 @@ const BOX = {};
 
 // EEW ---------------------------------------------------------
 function eewEntries(env) { return env.scene.items.filter((x) => x.it.type === 'eew'); }
-function eewCompact(env, en) {
+// full, compact or mini. On auto the first EEW on screen stays full and any that come in after it go mini, so a
+// second quake's warning tucks in underneath instead of pushing the first one around
+function eewMode(env, en) {
   const m = en.it.data.compact;
-  if (m === 'on') return true;
-  if (m === 'off') return false;
-  return eewEntries(env).filter((x) => x.p > 0.05).length > 1;
+  if (m === 'on') return 'compact';
+  if (m === 'off') return 'full';
+  if (m === 'mini') return 'mini';
+  const mine = env.tau - en.age;
+  const rank = (x) => (x.ev ? env.world.evs.indexOf(x.ev.E) : 0);
+  for (const x of eewEntries(env)) {
+    if (x === en || x.p < 0.5) continue;
+    const st = env.tau - x.age;
+    if (st < mine - 1e-6 || (Math.abs(st - mine) <= 1e-6 && rank(x) < rank(en))) return 'mini';
+  }
+  return 'full';
+}
+const eewCompact = (env, en) => eewMode(env, en) === 'compact';
+const EEW_MINI_H = 104;
+function drawEewMini(c, env, en, ee, w, h) {
+  const E = ee.E, rep = ee.rep, isEn = EN();
+  const name = E.name || {};
+  panelBg(c, 0, 0, w, h);
+  const cancel = rep && rep.kind === 'cancel', warn = rep && rep.kind === 'warning';
+  const col = !rep || cancel ? '#3A4757' : warn ? '#D41F2E' : '#F2B000';
+  const ink = rep && !warn && !cancel ? '#14100A' : '#FFFFFF';
+  headerBand(c, 0, 0, w, 40, col);
+  const title = !rep ? (isEn ? 'EEW · Standby' : '緊急地震速報　発表なし')
+    : isEn ? `EEW ${cancel ? 'Cancelled' : warn ? 'Warning' : 'Forecast'}` : `緊急地震速報（${cancel ? '取消' : warn ? '警報' : '予報'}）`;
+  const tw = txt(c, title, 16, 28, fnt(700, fitSize(c, title, w - 120, isEn ? FONT_UI : FONT_JP, 700, 19, 13), isEn ? FONT_UI : FONT_JP), ink);
+  if (rep) txt(c, isEn ? `#${rep._n}${rep.final ? ' · Final' : ''}` : `第${rep._n}報${rep.final ? '（最終）' : ''}`, Math.min(w - 16, 26 + tw + 70), 28, fnt(700, 15, LF()), ink, 'right');
+  const nm = isEn ? name.en || latLonStr(E.ph.lat, E.ph.lon) : name.ja || name.en || '';
+  const fam = famFor(nm);
+  txt(c, nm, 16, 70, fnt(700, fitSize(c, nm, w - 104, fam, 700, 20, 12), fam), '#F2F6FA');
+  if (rep && !cancel) {
+    const s = `M${rep.M.toFixed(1)}  ${rep.depth}km`;
+    txt(c, s, 17, 94, fnt(700, 17, FONT_NUM), '#9FB0C3');
+    const mi = ee.pred ? ee.pred.maxIdx : -1;
+    if (mi >= 0) shindoIcon(c, w - 16 - 48, 48, 48, mi); else emptyIcon(c, w - 16 - 48, 48, 48);
+  } else txt(c, cancel ? (isEn ? 'The earlier warning was cancelled.' : '先ほどの緊急地震速報は取り消されました') : (isEn ? 'Monitoring' : '監視中'), 17, 94, fnt(600, 14, LF()), '#8FA0B3');
 }
 function warnTargets(env, E, pr) {
   const DB = env.world.DB;
@@ -3028,13 +3153,16 @@ function warnTargets(env, E, pr) {
 BOX.eew = {
   measure(env, en) {
     const ee = evEntryFor(env, en);
-    if (eewCompact(env, en)) return { w: 448, h: 214 };
+    const mode = eewMode(env, en);
+    if (mode === 'mini') return { w: 448, h: EEW_MINI_H };
+    if (mode === 'compact') return { w: 448, h: 214 };
     if (!ee.rep) return { w: 448, h: 392 };
     const tg = en.it.data.targets !== false && ee.rep.kind === 'warning' && warnTargets(env, ee.E, ee.pred).length;
     return { w: 448, h: tg ? 412 : 392 };
   },
   draw(c, env, en, w, h) {
     const ee = evEntryFor(env, en), E = ee.E, rep = ee.rep;
+    if (h <= EEW_MINI_H + 1) return drawEewMini(c, env, en, ee, w, h);
     const compact = eewCompact(env, en);
     if (!rep) return drawStandby(c, env, en, E, w, h, compact);
     const prev = E.reports[rep._n - 2] || null;
@@ -4604,6 +4732,7 @@ function drawWatermark(c, env, y) {
 }
 
 // ---------------------------------------------------------------- docks: presence-weighted stacking with eased enter/exit
+const STACK_PRIO = { timestamp: -1, eew: 0, countdown: 1, flash: 2, epicenter: 3, report: 4, tsunami: 5, megaquake: 6, longperiod: 7, aftershock: 8, liquefaction: 9, landslide: 10, custom: 11 };
 function layoutWeight(b) {
   const en = b.en;
   if (en.phase === 'out') return 1 - clamp(en.pout, 0, 1);
@@ -4644,6 +4773,14 @@ function layoutBoxes(env) {
   }
   const by = { right: [], left: [], top: [], bottom: [], center: [], free: [] };
   for (const b of list) (by[b.dock] || by.right).push(b);
+  // the most important box sits on top: EEW, then the S-wave arrival, then the reports in the order they come,
+  // then the alerts. Same kind: whichever came first, then quake order.
+  if (env.world.doc.stack !== 'time') {
+    const evRank = new Map(env.world.evs.map((E, i) => [E.id, i]));
+    const rank = (b) => STACK_PRIO[b.en.it.type] ?? 20;
+    const evOf = (b) => (b.en.ev ? evRank.get(b.en.ev.E.id) ?? 0 : 0);
+    for (const k of ['right', 'left', 'center']) by[k].sort((a, b) => rank(a) - rank(b) || a.t0e - b.t0e || evOf(a) - evOf(b));
+  }
   stackDock(by.top, 0);
   let topIn = 0;
   for (const b of by.top) { b.x = 0; b.y = b.off; topIn += b.h * layoutWeight(b); }
@@ -4692,6 +4829,11 @@ function layoutBoxes(env) {
   return { list, topIn, botIn, rightW, rightWidth: rightWidth || 448, leftW, leftWidth: leftWidth || 520, leftBottom, ly0 };
 }
 function boxTransform(b, env) {
+  const T = boxTransform0(b, env);
+  boxOff(T, b, env);
+  return T;
+}
+function boxTransform0(b, env) {
   const en = b.en, A = en.A;
   const out = en.phase === 'out';
   const kind = out ? A.out : A.in;
@@ -4720,11 +4862,24 @@ function boxTransform(b, env) {
   }
   return T;
 }
+// while a title card is up everything docked slides off its own edge, leaving just the map
+function boxOff(T, b, env) {
+  const bo = env.boxOut || 0;
+  if (bo <= 0) return;
+  const s = b.sc || 1;
+  if (b.dock === 'right') T.dx += bo * (W - b.x + 40) / s;
+  else if (b.dock === 'left') T.dx -= bo * (b.x + b.w * s + 40) / s;
+  else if (b.dock === 'top') T.dy -= bo * (b.y + b.h + 10);
+  else if (b.dock === 'bottom') T.dy += bo * (H - b.y + 10);
+  else T.alpha *= 1 - bo;
+}
 function drawBoxes(c, env, lay) {
   const hits = [];
   const K = R.K;
   const order = lay.list.slice().sort((a, b) => (a.en.phase === 'out' ? 0 : 1) - (b.en.phase === 'out' ? 0 : 1));
+  const gone = (env.boxOut || 0) >= 0.999;                 // a title card has them all off screen
   for (const b of order) {
+    if (gone && b.dock !== 'free') continue;
     const T = boxTransform(b, env);
     if (T.alpha <= 0.003) continue;
     c.save();
@@ -4746,7 +4901,7 @@ function drawBoxes(c, env, lay) {
       rr(c, -5, -5, b.w + 10, b.h + 10, 13); c.stroke(); c.setLineDash([]);
     }
     c.restore();
-    if (T.alpha > 0.25) hits.push({ id: b.en.it.id, x: b.x + T.dx * b.sc, y: b.y + T.dy * b.sc, w: b.w * b.sc, h: b.h * b.sc, dock: b.dock });
+    if (T.alpha > 0.25 && (env.boxOut || 0) < 0.5) hits.push({ id: b.en.it.id, x: b.x + T.dx * b.sc, y: b.y + T.dy * b.sc, w: b.w * b.sc, h: b.h * b.sc, dock: b.dock });
   }
   return hits;
 }
@@ -4811,6 +4966,11 @@ function renderFrame(F) {
   const scene = sceneAt(world, tau, prefs);
   settleStart(scene, F.tStart ?? -3);
   const env = { ctx: c, tau, prefs, world, scene, originMs: F.originMs, tz: world.tz, h12: !!(prefs.clock && prefs.clock.h12), idle: F.idle, selected: F.selected };
+  // a title card on the timeline: the newest one that's up
+  let card = null;
+  if (!F.idle) for (const en of scene.items) if (en.it.type === 'card' && en.p > 0.002 && (!card || en.age < card.age)) card = en;
+  const cardOut = card && card.it.data.hide !== false ? card.p : 0;
+  env.boxOut = clamp(Math.max(F.boxOut || 0, cardOut), 0, 1);
   c.setTransform(R.K, 0, 0, R.K, 0, 0);
   c.globalAlpha = 1;
   const lay = layoutBoxes(env);
@@ -4971,20 +5131,34 @@ function renderFrame(F) {
     c.strokeRect(6, 6, W - 12, H - 12); c.restore();
   }
 
-  // ---- chrome
+  // ---- chrome (slides off with the boxes while a title card is up)
+  const bo = env.boxOut;
   let cwid = 0;
+  c.save();
+  if (bo) c.translate(0, -bo * (PAD + lay.topIn + CLOCK_H + 40));
   if (prefs.map.clock !== false) cwid = drawClock(c, env, PAD + lay.topIn);
   drawDetectTag(c, env, PAD + (cwid ? cwid + 12 : 0), PAD + lay.topIn);
+  c.restore();
   if (prefs.map.legend !== false) {
     const ly = H - 148 - lay.botIn;
     const la = 1 - clamp((lay.leftBottom - ly + 10) / 40, 0, 1);
+    c.save();
+    if (bo) c.translate(-bo * 580, 0);
     drawLegend(c, ly, la);
+    c.restore();
   }
+  c.save();
+  if (bo) c.globalAlpha *= 1 - bo;
   drawWatermark(c, env, H - 27 - lay.botIn);
+  c.restore();
   // ---- boxes
   R.hits = drawBoxes(c, env, lay);
   drawVignette(c, env);
-  return { status: statusOf(env), stale, scene, lay, env };
+  if (card) {
+    const r = drawCardOverlay(c, env, card);
+    if (r && card.p > 0.25) R.hits.push({ id: card.it.id, ...r, dock: 'over' });
+  }
+  return { status: statusOf(env), stale, scene, lay, env, card: !!card };
 }
 
 // ---------------------------------------------------------------- intro screen
@@ -5024,8 +5198,8 @@ function blurCopy(src, px, into) {
   o.drawImage(b, 0, 0, w, h);
   return out;
 }
-function introTexts(world, cfg, originMs) {
-  const en = UI_LANG === 'en', E = world.main, ev = E.ev, nm = E.name || {};
+function introTexts(world, cfg, originMs, E0) {
+  const en = UI_LANG === 'en', E = E0 || world.main, ev = E.ev, nm = E.name || {};
   const real = world.doc.meta.kind === 'real';
   const M = 'M' + (+ev.M).toFixed(1);
   const place = en ? nm.en || nm.ja || '' : nm.ja || nm.en || '';
@@ -5111,6 +5285,33 @@ function drawIntroCard(c, T, cfg, a, rise, hold) {
   }
   c.restore();
 }
+// a title card from the timeline: the live map blurs and darkens behind it while it's up
+const CARD = { tmp: null };
+function drawCardOverlay(c, env, en) {
+  const D = en.it.data, cfg = normIntro({ ...D, on: true });
+  const e = clamp(en.p, 0, 1);
+  if (e <= 0.002) return null;
+  const cw = R.canvas.width, ch = R.canvas.height;
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
+  const px = cfg.blur * R.K * e;
+  if (px > 0.4 && canFilter()) {
+    CARD.tmp = CARD.tmp && CARD.tmp.width === cw && CARD.tmp.height === ch ? CARD.tmp : Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+    const t2 = CARD.tmp.getContext('2d');
+    t2.setTransform(1, 0, 0, 1, 0, 0); t2.clearRect(0, 0, cw, ch); t2.drawImage(R.canvas, 0, 0);
+    c.filter = `blur(${px.toFixed(2)}px)`;
+    c.drawImage(CARD.tmp, -px * 2, -px * 2, cw + px * 4, ch + px * 4);
+    c.filter = 'none';
+  }
+  if (cfg.dim > 0) { c.fillStyle = `rgba(4,8,14,${(cfg.dim * e).toFixed(3)})`; c.fillRect(0, 0, cw, ch); }
+  c.restore();
+  const E = en.ev ? en.ev.E : env.world.main;
+  const T = introTexts(env.world, cfg, env.originMs, E);
+  const dur = en.it.t1 !== null && en.it.t1 !== undefined ? en.it.t1 - en.it.t0 : null;
+  const hold = dur && dur > 0 ? clamp(en.age / dur, 0, 1) : null;
+  drawIntroCard(c, T, cfg, e, en.phase === 'out' ? -(1 - e) * 30 : (1 - e) * 26, hold);
+  return cfg.style === 'lower' ? { x: 64, y: H - 560, w: 1180, h: 440 } : { x: (W - 1040) / 2, y: H / 2 - 230, w: 1040, h: 460 };
+}
 // F: the usual frame inputs; I = { t } seconds since the intro started
 function renderIntroFrame(F, I) {
   const world = F.world, cfg = normIntro(world.doc.intro);
@@ -5137,7 +5338,7 @@ function renderIntroFrame(F, I) {
   }
   // reveal: the real first frame sharpens out of the blur while the card lifts away
   const p = clamp((I.t - cfg.dur) / cfg.reveal, 0, 1), e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-  out = renderFrame(F);
+  out = renderFrame({ ...F, boxOut: 1 - e });          // the boxes slide in as the blur clears
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
   if (e < 1) {
     if (canFilter() && px > 0.5) {
@@ -6220,6 +6421,7 @@ function itemTitle(it) {
   if (it.name) return it.name;
   if (it.type === 'custom') return it.data.title || 'Custom alert';
   if (it.type === 'banner') return 'Banner · ' + (it.data.text || '').slice(0, 16);
+  if (it.type === 'card') return 'Title card' + (it.data.title ? ' · ' + it.data.title.slice(0, 18) : '');
   return BOX_TYPES[it.type].label;
 }
 function evIndex(id) { const i = S.adv.events.findIndex((e) => e.id === id); return i < 0 ? '' : 'E' + (i + 1); }
@@ -6769,6 +6971,18 @@ function ctxOpen(items, x, y, title) {
   const first = m.querySelector('button:not([disabled])');
   if (first) first.focus({ preventScroll: true });
 }
+// park a dropdown on screen: under its button (or above it when there's no room), never past an edge
+function popPlace(menu, anchor, align) {
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.right = 'auto';
+  menu.style.maxHeight = Math.max(160, Math.min(620, innerHeight - 16)) + 'px';
+  const w = menu.offsetWidth, hh = menu.offsetHeight;
+  const x = clamp(align === 'right' ? r.right - w : r.left, 8, Math.max(8, innerWidth - w - 8));
+  let y = r.bottom + 6;
+  if (y + hh > innerHeight - 8) y = r.top - hh - 6 >= 8 ? r.top - hh - 6 : Math.max(8, innerHeight - hh - 8);
+  menu.style.left = Math.round(x) + 'px'; menu.style.top = Math.round(y) + 'px';
+}
 function ctxClose() { const m = $('#ctxMenu'); if (m && !m.hidden) { m.hidden = true; return true; } return false; }
 function edCloseMenu() {
   let closed = ctxClose();
@@ -6776,6 +6990,8 @@ function edCloseMenu() {
   if (m && !m.hidden) { m.hidden = true; $('#btnAddBox').setAttribute('aria-expanded', 'false'); closed = true; }
   const p = $('#resetPop');
   if (p && !p.hidden) { p.hidden = true; $('#btnResetAll').setAttribute('aria-expanded', 'false'); closed = true; }
+  const q = $('#seqPop');
+  if (q && !q.hidden) { q.hidden = true; $('#btnSeq').setAttribute('aria-expanded', 'false'); closed = true; }
   return closed;
 }
 function boxTypeItems(t) {
@@ -6788,6 +7004,8 @@ function boxTypeItems(t) {
   out.push('-', { head: 'Your own' });
   for (const tp of CUSTOM_TEMPLATES) add('custom', tp.id === 'blank' ? 'Custom alert (blank)' : tp.en.title, tp.title, SEVERITY[tp.sev].col, tp);
   for (const ty of ['banner', 'ticker', 'timestamp']) add(ty, BOX_TYPES[ty].label, BOX_TYPES[ty].ja, BOX_TYPES[ty].color);
+  out.push('-', { head: 'Screens' });
+  add('card', 'Title card (boxes slide away)', BOX_TYPES.card.ja, BOX_TYPES.card.color);
   return out;
 }
 function edOpenMenu() {
@@ -6795,6 +7013,7 @@ function edOpenMenu() {
   edCloseMenu();
   menuFill(m, boxTypeItems(), edCloseMenu);
   m.hidden = false;
+  popPlace(m, $('#btnAddBox'), 'left');
   $('#btnAddBox').setAttribute('aria-expanded', 'true');
   const first = m.querySelector('button');
   if (first) first.focus();
@@ -6889,6 +7108,7 @@ function edSelItems() {
     items.push({ label: 'Move row down', key: 'Alt+↓', disabled: i >= d.items.length - 1, run: () => edMoveRow(1) });
   }
   if (one && one.kind === 'event') {
+    items.push({ label: 'Build a realistic sequence…', run: () => setTimeout(() => edSeqOpen(o.id), 0) });
     items.push({ label: 'Select it with its reports and boxes', run: () => { edSetSel([one, ...d.eew.filter((r) => r.ev === o.id).map((r) => ({ kind: 'eew', id: r.id })), ...d.items.filter((it) => it.ev === o.id).map((it) => ({ kind: 'item', id: it.id }))]); edRender(); edInspector(); needRender = true; } });
   }
   if (one && one.kind === 'eew') {
@@ -6936,6 +7156,7 @@ function edAddBox(type, tpl, t) {
   const t0 = roundT(Math.max(t ?? S.tau, T_START));
   let t1 = null;
   if (type === 'banner') t1 = roundT(t0 + 12);
+  else if (type === 'card') t1 = roundT(t0 + 6);
   else if (type === 'eew' || type === 'countdown') t1 = roundT(t0 + 60);
   const data = localizeDefaults(type, itemDefaults(type), S.prefs.lang);
   if (type === 'custom' && tpl) {
@@ -7115,8 +7336,18 @@ function edMoveRow(dir) {
   edEdit(() => { const [it] = d.items.splice(i, 1); d.items.splice(j, 0, it); }, { coalesce: 'row:' + s.id, structural: true });
 }
 // Reset all: 'keep' = everything but the quakes, 'easy' = start over from the Easy setup, 'time' = re-time the standard boxes
-function edResetAll(how = 'keep') {
+function edResetAll(how = 'keep', quiet) {
   if (!S.adv || S.recording) return;
+  if (how === 'clear') {
+    edEdit(() => {
+      for (const ev of S.adv.events) ev.eewAuto = false;
+      S.adv.eew = []; S.adv.items = []; S.adv.cues = []; S.adv.duration = null;
+      S.adv.camera = { mode: 'auto', start: null, keys: [] };
+      S.sel = null; S.multi = [];
+    }, { structural: true });
+    if (!quiet) toast('Timeline cleared. Your quakes stayed, with no EEW and no boxes. Undo brings it all back.', 3200);
+    return;
+  }
   if (how === 'easy') {
     edPushUndo();
     S.adv = easyDoc(); S.sel = null; S.multi = [];
@@ -7131,6 +7362,36 @@ function edResetAll(how = 'keep') {
   }
   edEdit(() => { resetDocTimeline(S.DB, S.adv, S.easy.extras, S.prefs.lang); S.sel = null; S.multi = []; }, { structural: true });
   toast('Timeline reset. Your quakes stayed put. Undo brings the rest back.', 3200);
+}
+// Advanced: the realistic sequence builder (same steps as Easy, for any quake)
+function edSeqOpen(evId) {
+  if (!S.adv || S.recording) return;
+  const p = $('#seqPop'), b = $('#btnSeq');
+  edCloseMenu();
+  if (!ED.seqX) ED.seqX = { ...EXTRAS_DEFAULT, ...(S.easy.extras || {}) };
+  const has = (id) => id === 'all' || S.adv.events.some((e) => e.id === id);
+  ED.seqEv = evId && has(evId) ? evId : ED.seqEv && has(ED.seqEv) ? ED.seqEv : S.adv.events[0].id;
+  const sync = () => { const sb = p.querySelector('#sq_eewStandby'); if (sb) { sb.disabled = !ED.seqX.eew; sb.closest('label').classList.toggle('off', !ED.seqX.eew); } };
+  p.textContent = '';
+  p.append(
+    h('div', { class: 'mh', text: 'Build a realistic sequence' }),
+    h('p', { class: 'note', text: 'Puts the boxes on the timeline in the order a real broadcast shows them, timed from the quake itself.' }),
+    S.adv.events.length > 1 ? fRow('For', cSel(() => ED.seqEv, (v) => { ED.seqEv = v; }, [...evOptions(false), ['all', 'Every quake']])) : null,
+    seqChecklist('sq_', () => ED.seqX, (k, v) => { ED.seqX[k] = v; sync(); }),
+    h('div', { class: 'row' }, btn('Build it', () => { edCloseMenu(); edBuildSequence(ED.seqEv, ED.seqX); }, 'btn primary')),
+    h('p', { class: 'note', text: 'Replaces that quake’s standard boxes. Custom alerts, banners, title cards, camera keys and sound cues stay. Undo brings back what you had.' }));
+  p.hidden = false;
+  popPlace(p, b.offsetParent ? b : $('#btnAddBox'), 'right');
+  b.setAttribute('aria-expanded', 'true');
+  const first = p.querySelector('input,select,button');
+  if (first) first.focus({ preventScroll: true });
+}
+function edBuildSequence(evId, X) {
+  if (!S.adv || S.recording) return;
+  const ids = evId === 'all' ? S.adv.events.map((e) => e.id) : [evId];
+  let n = 0;
+  edEdit(() => { n = 0; for (const id of ids) n += buildSequence(S.DB, S.adv, id, X, S.prefs.lang); S.sel = null; S.multi = []; }, { structural: true });
+  toast(`Built the sequence: ${n} box${n === 1 ? '' : 'es'} in broadcast order. Undo brings back what you had.`, 3200);
 }
 function edTips(show, save) {
   const el = $('#tlTips');
@@ -7222,6 +7483,10 @@ function inspDoc() {
       h('span', { class: 'note', text: cam.start ? `${latLonStr(cam.start.lat, cam.start.lon)} · ${Math.round(cam.start.r)} km` : 'Auto' }),
       btn('Use current view', () => edEdit(() => { cam.start = viewAsKey(); }, { structural: true })),
       cam.start ? btn('Clear', () => edEdit(() => { cam.start = null; }, { structural: true }), 'btn sm ghost') : null)) : null));
+  out.push(fg('Boxes',
+    fRow('Stacking', cSel(() => d.stack || 'priority', (v) => edEdit(() => { d.stack = v; }, { structural: true }), [['priority', 'Most important on top'], ['time', 'In the order they came in']]),
+      'Most important on top: the EEW, then the S-wave arrival, then the reports in the order they come, then the alerts.'),
+    h('div', { class: 'row' }, btn('Realistic sequence…', () => edSeqOpen()))));
   out.push(fg('Network & you',
     fRow('Station density', cRange(() => d.sensors.density, (v) => edEdit(() => { d.sensors.density = v; }, { coalesce: 'doc:dens' }), { min: 0.05, max: 1, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' }), 'Thins the dots on the map. Detection still uses every station.'),
     fRow('Your location', h('div', { class: 'row' },
@@ -7274,7 +7539,7 @@ function inspItem(it) {
       btn('Split at playhead', edSplitSel),
       btn('Preview', () => { seek(it.t0 - 0.5); startPlayback(false); }))));
   const docks = band ? [['top', 'Top band'], ['bottom', 'Bottom band'], ['free', 'Free position']] : [['right', 'Right column'], ['left', 'Left column'], ['center', 'Center'], ['free', 'Free position']];
-  out.push(fg('Position',
+  if (it.type !== 'card') out.push(fg('Position',
     fRow('Dock', cSel(() => it.dock, (v) => edEdit(() => {
       if (v === 'free') { const hb = R.hits.find((x) => x.id === it.id); if (hb) { it.x = Math.round(hb.x); it.y = Math.round(hb.y); } }
       it.dock = v;
@@ -7310,13 +7575,31 @@ function inspContent(it, D, set) {
     dd.sev === 'custom' ? fRow('Custom color', cColor(() => dd.color, set(dd, 'color'))) : null];
   const E = it.ev && it.ev !== 'auto' ? S.world.evMap.get(it.ev) : S.world.main;
   switch (it.type) {
+    case 'card': {
+      const auto = S.world ? introTexts(S.world, { ...normIntro(D), title: '', sub: '', kicker: '' }, S.originMs, E || S.world.main) : { title: '', sub: '', kicker: '' };
+      return fg('Content',
+        fRow('Title', cText(() => D.title, set(D, 'title'), { ph: auto.title, max: 120 })),
+        fRow('Subtitle', cText(() => D.sub, set(D, 'sub'), { ph: auto.sub || 'Optional', max: 160 })),
+        fRow('Top line', cText(() => D.kicker, set(D, 'kicker'), { ph: auto.kicker, max: 80 })),
+        fRow('More text', cArea(() => D.body, set(D, 'body'), { rows: 3, ph: 'Anything else you want on the card. New line = new line.', max: 600 })),
+        fRow('Layout', cSel(() => D.style, set(D, 'style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Just the text']])),
+        fRow('Accent', cColor(() => D.color, set(D, 'color'))),
+        cChk(() => D.hide !== false, set(D, 'hide'), 'Slide the boxes off while it’s up', 'The clock and legend go too, leaving just the map. Everything slides back when it goes, showing whatever is happening by then.'),
+        cChk(() => D.facts, set(D, 'facts'), 'Quake facts', 'Epicenter, magnitude, depth and origin time'),
+        cChk(() => D.note, set(D, 'note'), 'Drill or replay note'),
+        cChk(() => D.bar, set(D, 'bar'), 'Countdown bar'),
+        fRow('Blur', cRange(() => D.blur, set(D, 'blur'), { min: 0, max: 40, step: 1, fmt: (v) => v + ' px' })),
+        fRow('Darken', cRange(() => D.dim, set(D, 'dim'), { min: 0, max: 0.8, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })),
+        h('p', { class: 'note', text: 'The quake keeps going underneath. Drag the ends of its bar to change how long it stays up.' }));
+    }
     case 'eew': return fg('Content',
       cChk(() => D.standby, set(D, 'standby', { structural: true }), 'Show the standby panel before the first report'),
       cChk(() => D.targets, set(D, 'targets'), 'List the warning target areas'),
-      fRow('Compact', cSel(() => D.compact, set(D, 'compact'), [['auto', 'When 2+ EEWs are up'], ['on', 'Always'], ['off', 'Never']])),
+      fRow('Size', cSel(() => D.compact, set(D, 'compact'), [['auto', 'Full, or a slim strip under an earlier EEW'], ['off', 'Always full'], ['on', 'Always compact'], ['mini', 'Always a slim strip']])),
       h('p', { class: 'note', text: 'The panel reads the quake’s EEW reports (the EEW row). Edit a report to change its magnitude, depth or warning level.' }));
     case 'countdown': {
       const g = fg('Content',
+        cChk(() => D.standby, set(D, 'standby', { structural: true }), 'Show it as soon as shaking is detected', 'The times fill in when the first EEW arrives. Off waits for the EEW.'),
         cChk(() => D.my, set(D, 'my'), 'Put your location on top (set it with nothing selected)'),
         fRow('Places', cSel(() => D.rows, set(D, 'rows', { structural: true }), [['auto', 'Biggest nearby cities'], ['custom', 'My own list']])),
         fRow('Max rows', cNum(() => D.maxRows, set(D, 'maxRows'), { min: 1, max: 14, step: 1, int: true })));
@@ -7538,6 +7821,15 @@ function edInit() {
   try { ED.collapse = JSON.parse(localStorage.getItem('quaker.v2.tlcollapse') || '{}') || {}; } catch (e) { ED.collapse = {}; }
   $('#btnAddBox').addEventListener('click', (e) => { e.stopPropagation(); if ($('#addMenu').hidden) edOpenMenu(); else edCloseMenu(); });
   document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap, #ctxMenu')) edCloseMenu(); });
+  // dropdowns stay pinned to their buttons when the page moves; a right-click menu just closes
+  const repin = () => {
+    for (const [m, b, al] of [['#addMenu', '#btnAddBox', 'left'], ['#resetPop', '#btnResetAll', 'right'], ['#seqPop', '#btnSeq', 'right']]) {
+      const el = $(m);
+      if (el && !el.hidden) popPlace(el, $(b), al);
+    }
+  };
+  window.addEventListener('resize', () => { ctxClose(); repin(); });
+  window.addEventListener('scroll', (e) => { if (e.target instanceof Element && e.target.closest('.menu')) return; ctxClose(); repin(); }, true);
   for (const id of ['#addMenu', '#ctxMenu', '#resetPop']) $(id).addEventListener('keydown', menuKeys);
   $('#btnAddEvent').addEventListener('click', () => edAddEvent());
   $('#btnAddReport').addEventListener('click', () => edAddReport());
@@ -7556,10 +7848,13 @@ function edInit() {
     if (!p.hidden) { edCloseMenu(); return; }
     edCloseMenu();
     p.hidden = false;
+    popPlace(p, e.currentTarget, 'right');
     e.currentTarget.setAttribute('aria-expanded', 'true');
     const first = p.querySelector('button');
     if (first) first.focus();
   });
+  $('#btnSeq').addEventListener('click', (e) => { e.stopPropagation(); if (!$('#seqPop').hidden) { edCloseMenu(); return; } edSeqOpen(); });
+  $('#seqPop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); edCloseMenu(); $('#btnSeq').focus(); } });
   for (const b of $$('#resetPop [data-reset]')) b.addEventListener('click', (e) => { e.stopPropagation(); edCloseMenu(); edResetAll(b.dataset.reset); });
   let tip = null;
   try { tip = localStorage.getItem('quaker.v2.tltip'); } catch (e) { /* storage off */ }
@@ -8429,17 +8724,30 @@ const VIEWS = [
   { id: 'kanto', label: 'Kanto', ja: '関東', lon: 139.7, lat: 35.85, s: 95 },
   { id: 'kansai', label: 'Kansai', ja: '関西', lon: 135.5, lat: 34.75, s: 95 },
 ];
-const EXTRAS = [
-  ['flash', 'Intensity flash first', '震度速報'],
-  ['tsunami', 'Tsunami warnings, when it makes one', '津波'],
-  ['megaquake', 'Nankai / follow-up quake info (Japan)', '臨時情報'],
-  ['longperiod', 'Long-period ground motion', '長周期地震動'],
-  ['aftershock', 'Aftershock outlook', '地震活動の見通し'],
-  ['liquefaction', 'Liquefaction risk', '液状化'],
-  ['landslide', 'Landslide risk', '土砂災害'],
-  ['ticker', 'News ticker along the bottom', 'テロップ'],
-  ['timestamp', 'Origin time box', '発生時刻'],
-];
+const EXTRAS = [...SEQ_STEPS, ['eewStandby'], ...SEQ_MORE];
+// the broadcast sequence as numbered steps, then the extra info. get() gives the flags, set(k, v) changes one
+function seqChecklist(prefix, get, set) {
+  const X = () => ({ ...EXTRAS_DEFAULT, ...(get() || {}) });
+  const box = (k) => {
+    const inp = h('input', { type: 'checkbox', id: prefix + k });
+    inp.checked = !!X()[k];
+    inp.addEventListener('change', () => set(k, inp.checked));
+    return inp;
+  };
+  const steps = h('ol', { class: 'seq-steps' });
+  for (const [k, label, ja, hint] of SEQ_STEPS) {
+    const li = h('li', {}, h('label', { class: 'check' }, box(k), h('span', {}, label, h('small', { class: 'ja', text: ja }), hint ? h('small', { class: 'hint', text: hint }) : null)));
+    if (k === 'eew') {
+      const sb = box('eewStandby');
+      sb.disabled = !X().eew;
+      li.append(h('label', { class: 'check sub' + (X().eew ? '' : ' off') }, sb, h('span', {}, 'Show the EEW panel from the start', h('small', { class: 'hint', text: 'As a standby panel until the first warning' }))));
+    }
+    steps.append(li);
+  }
+  const more = h('div', { class: 'list seq-more' });
+  for (const [k, label, ja] of SEQ_MORE) more.append(h('label', { class: 'check' }, box(k), h('span', {}, label, h('small', { class: 'ja', text: ja }))));
+  return h('div', { class: 'seq' }, steps, h('div', { class: 'seq-mh', text: 'More info after the report' }), more);
+}
 const depthFromSlider = (v) => (v <= 500 ? Math.round(v * 0.12) : Math.round(60 + ((v - 500) / 500) * 640));
 const sliderFromDepth = (d) => (d <= 60 ? Math.round(d / 0.12) : Math.round(500 + ((d - 60) / 640) * 500));
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -8609,12 +8917,14 @@ async function projStart(name, src, easy, adv = null, mode = 'easy', fit = '') {
   projLoad(rec, fit);
 }
 function projNewBlank(adv) {
+  const empty = adv === 'empty';
   const n = PJ.list.filter((p) => /^Untitled project/.test(p.name)).length;
   const easy = { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras } };
   projStart(n ? `Untitled project ${n + 1}` : 'Untitled project', 'new', easy, null, 'easy', 'midatl').then(() => {
     if (adv) setMode('adv');
+    if (empty) edResetAll('clear', true);
     closeAllDialogs();
-    toast(adv ? 'New project, straight into the timeline.' : 'New project. Click the map to place the quake.', 2600);
+    toast(empty ? 'New project with an empty timeline. Add boxes, or build a realistic sequence.' : adv ? 'New project, straight into the timeline.' : 'New project. Click the map to place the quake.', 2800);
   });
 }
 async function projOpen(id) {
@@ -9303,11 +9613,7 @@ function bindEasy() {
   });
   $('#btnClearLoc').addEventListener('click', () => { S.easy.my = null; rebuild(); });
   const ex = $('#extras');
-  for (const [k, label, ja] of EXTRAS) {
-    const inp = h('input', { type: 'checkbox', id: 'ex_' + k });
-    inp.addEventListener('change', () => { S.easy.extras[k] = inp.checked; rebuild(); });
-    ex.append(h('label', { class: 'check' }, inp, h('span', {}, label, h('small', { class: 'ja', text: ja }))));
-  }
+  ex.append(seqChecklist('ex_', () => S.easy.extras, (k, v) => { S.easy.extras[k] = v; rebuild(); updateEasyUI(); }));
   $('#clockMode').addEventListener('change', (e) => {
     S.easy.clock.mode = e.target.value;
     if (e.target.value === 'custom' && !S.easy.clock.start) S.easy.clock.start = epochToWall(Date.now(), S.world.tz);
@@ -9376,7 +9682,9 @@ function updateEasyUI() {
   if (real) { optReal.textContent = 'Replay · ' + (e.title || 'real quake'); sel.value = 'real'; }
   else sel.value = PRESETS.some((q) => q.id === e.preset) ? e.preset : 'custom';
   $('#btnClearLoc').hidden = !e.my;
-  for (const [k] of EXTRAS) $('#ex_' + k).checked = !!e.extras[k];
+  for (const [k] of EXTRAS) { const el = $('#ex_' + k); if (el) el.checked = !!e.extras[k]; }
+  const sb = $('#ex_eewStandby');
+  if (sb) { sb.disabled = !e.extras.eew; sb.closest('label').classList.toggle('off', !e.extras.eew); }
   $('#clockMode').value = e.clock.mode;
   $('#clockCustomRow').hidden = e.clock.mode !== 'custom';
   $('#clockStart').value = (e.clock.start || '').slice(0, 19);
@@ -9609,7 +9917,8 @@ function renderProjects() {
   search.addEventListener('input', () => { PJ.query = search.value; renderProjects(); });
   root.append(h('div', { class: 'row pj-top' },
     h('button', { type: 'button', class: 'btn primary', text: '＋ New project', onclick: () => projNewBlank(false) }),
-    h('button', { type: 'button', class: 'btn', text: '＋ New Advanced project', title: 'Starts in the timeline editor', onclick: () => projNewBlank(true) }),
+    h('button', { type: 'button', class: 'btn', text: '＋ New Advanced project', title: 'Starts in the timeline editor with the standard boxes', onclick: () => projNewBlank(true) }),
+    h('button', { type: 'button', class: 'btn', text: '＋ Empty timeline', title: 'Starts in the timeline editor with nothing on it but the quake', onclick: () => projNewBlank('empty') }),
     h('span', { style: 'flex:1' }), PJ.list.length > 4 ? search : null));
   root.append(h('p', { class: 'note', text: 'Projects save themselves as you work. Preloaded scenarios, real quakes and imports each open as a new project, so the originals never change.' }));
   if (!PJ.ok) root.append(h('p', { class: 'note warn', text: 'This browser isn’t keeping projects between visits (a private window, or site storage is off). Export the ones you want to keep.' }));
@@ -10198,7 +10507,7 @@ async function boot() {
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
-      projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
+      projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edSeqOpen, edBuildSequence, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
       previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop,
       SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile, syncLinkGitHub, syncUnlinkGitHub, GH },
   };
