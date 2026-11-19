@@ -1590,7 +1590,9 @@ function pointLevelTimes(r) {
 }
 
 // ---------------------------------------------------------------- EEW report generation (event-local times)
-const EEW_TUNE_DEFAULT = { delay: 0, under: 1, err: 1, pace: 1, warnAt: 4 };
+// delay: JMA's first report usually lands 2 to 5 s after the first station trips, so the default leaves room
+// for the detection boxes and rough estimate (first report = detection + 0.9 s + delay)
+const EEW_TUNE_DEFAULT = { delay: 1.5, under: 1, err: 1, pace: 1, warnAt: 4 };
 function genEEW(DB, ph, tune = {}) {
   const T = { ...EEW_TUNE_DEFAULT, ...tune };
   if (ph.tDet === null || !ph.shaking) return [];
@@ -4163,6 +4165,110 @@ function drawWaves(c, srcs, v, alpha, fillOnly) {
     c.restore();
   }
 }
+// ---------------------------------------------------------------- before the first EEW (light green, both optional)
+// 1) detection boxes: a box around every station that has felt it so far, the rawest guess at where it is
+// 2) rough estimate: once a handful of stations have it, P and S circles from a first guess that settles
+//    toward the real spot each second, until the first EEW takes over
+const PRE = [150, 236, 140];
+// stations in the order they trip, with running bounds so a box for any moment is one lookup
+function preOrder(DB, ph) {
+  if (ph._pre) return ph._pre;
+  const list = [];
+  for (const i of ph.active) {
+    const t = ph.Ipk[i] - 1.6 >= -0.3 ? ph.tP[i] + 0.3 : ph.Ipk[i] >= 0.5 ? ph.tS[i] + 0.5 : null;
+    if (t !== null && t < 90) list.push([t, i]);
+  }
+  list.sort((a, b) => a[0] - b[0]);
+  const n = Math.min(list.length, 6000);
+  const o = { n, t: new Float32Array(n), i: new Int32Array(n), x0: new Float32Array(n), x1: new Float32Array(n), y0: new Float32Array(n), y1: new Float32Array(n) };
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) {
+    const [t, i] = list[k];
+    o.t[k] = t; o.i[k] = i;
+    x0 = Math.min(x0, DB.st.wx[i]); x1 = Math.max(x1, DB.st.wx[i]); y0 = Math.min(y0, DB.st.wy[i]); y1 = Math.max(y1, DB.st.wy[i]);
+    o.x0[k] = x0; o.x1[k] = x1; o.y0[k] = y0; o.y1[k] = y1;
+  }
+  ph._pre = o;
+  return o;
+}
+const preCount = (o, lt) => { let lo = 0, hi = o.n; while (lo < hi) { const m = (lo + hi) >> 1; if (o.t[m] <= lt) lo = m + 1; else hi = m; } return lo; };
+// what to show for one event right now (null = nothing)
+function preState(env, ee) {
+  const mp = env.prefs.map;
+  if ((mp.preBox === false && mp.preEst === false) || !ee.active) return null;
+  const E = ee.E, ph = E.ph;
+  if (!ph.shaking || ph.tDet === null || ee.lt < ph.tDet) return null;
+  const first = E.reports.length ? E.reports[0].t - E.ev.t0 : null;
+  const end = first !== null ? first + 0.6 : ph.tDet + 12;
+  if (ee.lt >= end) return null;
+  const fade = first !== null ? (ee.lt <= first ? 1 : 1 - (ee.lt - first) / 0.6) : clamp((end - ee.lt) / 1.5, 0, 1);
+  const o = preOrder(env.world.DB, ph);
+  const lt = (mp.tick !== false ? Math.floor(env.tau) : env.tau) - E.ev.t0;
+  const m = preCount(o, Math.max(lt, ph.tDet));
+  const out = { fade, E, box: null, est: null };
+  if (mp.preBox !== false && m >= 2) out.box = { x0: o.x0[m - 1], x1: o.x1[m - 1], y0: o.y0[m - 1], y1: o.y1[m - 1] };
+  // the estimate needs five stations and a moment to work it out, and is skipped when the EEW beats it
+  const tEst = Math.max(ph.tDet + 0.8, (o.n >= 5 ? o.t[4] : Infinity) + 0.5);
+  if (mp.preEst !== false && first !== null && ee.lt >= tEst && tEst < first - 0.3) {
+    const j = Math.floor(ee.lt - tEst);
+    const k = Math.min(preCount(o, tEst + j), 14);
+    let sx = 0, sy = 0, sw = 0;
+    for (let q = 0; q < k; q++) { const w = 1 / (1 + q * 0.25); sx += env.world.DB.st.wx[o.i[q]] * w; sy += env.world.DB.st.wy[o.i[q]] * w; sw += w; }
+    const conv = clamp(0.35 + 0.22 * j, 0.35, 0.92);
+    const tx = wxOf(n360(ph.lon)), ty = wyOf(ph.lat);
+    const wx = sw ? lerp(sx / sw, tx, conv) : tx, wy = sw ? lerp(sy / sw, ty, conv) : ty;
+    const ll = { lon: n180(lonOf(wx)), lat: latOf(wy) };
+    out.est = { lat: ll.lat, lon: ll.lon, depth: 10, lt: ee.lt - (1 - conv) * 0.9, kind: 'pre', since: ee.lt - tEst };
+  }
+  return out;
+}
+function drawPre(c, env, v, alpha, layer) {
+  if (env.idle) return;
+  const en = UI_LANG === 'en';
+  for (const ee of env.scene.events) {
+    const st = preState(env, ee);
+    if (!st) continue;
+    const a = alpha * st.fade;
+    if (a <= 0.01) continue;
+    if (layer === 'fill') {
+      if (st.est) drawWaves(c, [st.est], v, a, true);
+      continue;
+    }
+    if (st.box) {
+      const pad = 6;
+      let x0 = (st.box.x0 - v.cx) * v.s + W / 2 - pad, x1 = (st.box.x1 - v.cx) * v.s + W / 2 + pad;
+      let y0 = (st.box.y0 - v.cy) * v.s + H / 2 - pad, y1 = (st.box.y1 - v.cy) * v.s + H / 2 + pad;
+      if (x1 - x0 < 26) { const m = (x0 + x1) / 2; x0 = m - 13; x1 = m + 13; }
+      if (y1 - y0 < 26) { const m = (y0 + y1) / 2; y0 = m - 13; y1 = m + 13; }
+      c.save();
+      c.globalAlpha = a;
+      c.fillStyle = rgbStr(PRE, 0.1); c.fillRect(x0, y0, x1 - x0, y1 - y0);
+      c.strokeStyle = rgbStr(PRE, 0.95); c.lineWidth = 2.2; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      // corner ticks, like a detection frame
+      c.lineWidth = 4; c.beginPath();
+      const k = Math.min(14, (x1 - x0) / 3, (y1 - y0) / 3);
+      for (const [cx, cy, dx, dy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]) { c.moveTo(cx + dx * k, cy); c.lineTo(cx, cy); c.lineTo(cx, cy + dy * k); }
+      c.stroke();
+      txt(c, en ? 'SHAKING DETECTED' : '揺れ検知  DETECTED', x0, y0 - 9, fnt(700, 16, en ? FONT_UI : FONT_JP), rgbStr(PRE, 1), 'left', 'rgba(5,9,15,0.9)', 4);
+      c.restore();
+    }
+    if (st.est) {
+      const src = st.est;
+      const rp = rOfT(TT.tp, src.lt), rs = rOfT(TT.ts, src.lt);
+      const p = rp > src.depth ? Math.sqrt(rp * rp - src.depth * src.depth) : 0;
+      const s = rs > src.depth ? Math.sqrt(rs * rs - src.depth * src.depth) : 0;
+      const ca = a * clamp(src.since / 0.35, 0, 1);
+      c.save();
+      if (p > 0) { c.setLineDash([9, 7]); c.strokeStyle = rgbStr(PRE, 0.85 * ca); c.lineWidth = 2.2; c.stroke(circlePath(src.lat, src.lon, p, v)); }
+      c.setLineDash([]);
+      if (s > 0) { c.strokeStyle = rgbStr(PRE, 0.95 * ca); c.lineWidth = 2.8; c.stroke(circlePath(src.lat, src.lon, s, v)); }
+      const ep = lonLatToScreen(src.lon, src.lat, v);
+      drawX(c, ep.x, ep.y, ca * (env.prefs.reduced || src.since % 1 < 0.7 ? 1 : 0.35), 9, '#7BD66E');
+      txt(c, en ? 'ROUGH ESTIMATE' : '推定  ROUGH ESTIMATE', ep.x + 15, ep.y - 13, fnt(700, 16, en ? FONT_UI : FONT_JP), rgbStr(PRE, ca), 'left', 'rgba(5,9,15,0.9)', 4);
+      c.restore();
+    }
+  }
+}
 function drawX(c, x, y, alpha, size = 13, col = '#E8101E') {
   c.save(); c.globalAlpha *= alpha; c.lineCap = 'round';
   for (const [cc, w] of [['#FFFFFF', 9], [col, 5]]) {
@@ -4754,8 +4860,10 @@ function renderFrame(F) {
     }
     const srcs = F.idle ? [] : waveSources(env);
     drawWaves(c, srcs, vs, liveA, true);
+    drawPre(c, env, vs, liveA, 'fill');
     if (prefs.map.stations !== false) drawStations(c, env, vs, liveA);
     drawWaves(c, srcs, vs, liveA, false);
+    drawPre(c, env, vs, liveA, 'stroke');
     if (prefs.map.labels !== false) drawCityLabels(c, env, vs, liveA);
     // estimated epicenters (blinking X)
     if (!F.idle) {
@@ -6894,7 +7002,7 @@ function inspEvent(ev) {
       h('span', { text: 'First detection' }), h('b', { text: E.ph.tDet === null ? 'none' : `+${E.ph.tDet.toFixed(1)} s` })) : null));
   out.push(fg('EEW reports',
     cChk(() => ev.eewAuto, (v) => edEdit(() => { ev.eewAuto = v; if (v) refreshAutoEEW(S.DB, S.adv, ev.id); }, { structural: true }), 'Generate reports automatically', 'Turns off by itself when you edit a report by hand.'),
-    fRow('Extra delay', cRange(() => T.delay, tune('delay'), { min: 0, max: 30, step: 0.5, fmt: (v) => v + ' s' })),
+    fRow('First EEW', cRange(() => T.delay, tune('delay'), { min: 0, max: 30, step: 0.5, fmt: (v) => `${(v + 0.9).toFixed(1)} s` }), 'Seconds from first detection to the first report. JMA is usually 2 to 5 s, and the gap is when the green detection boxes and rough estimate show.'),
     fRow('Lowballing', cRange(() => T.under, tune('under'), { min: 0, max: 3, step: 0.1, fmt: (v) => v.toFixed(1) + '×' }), 'How far below the real magnitude the first reports start.'),
     fRow('Location error', cRange(() => T.err, tune('err'), { min: 0, max: 5, step: 0.1, fmt: (v) => v.toFixed(1) + '×' })),
     fRow('Update pace', cRange(() => T.pace, tune('pace'), { min: 0.3, max: 3, step: 0.1, fmt: (v) => v.toFixed(1) + '×' }), 'Above 1× spaces the updates out.'),
@@ -7044,7 +7152,7 @@ const PREFS_DEFAULT = {
   v: 2,
   anim: { preset: 'glide', in: 'slide', out: 'slide', dur: 0.6, ease: 'swiftOut', roll: true },
   reducedMode: 'auto',
-  map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1 },
+  map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1, preBox: true, preEst: true },
   fx: { shake: 0.6, vignette: true, reveal: true, shadows: true },
   clock: { h12: false },
   sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'up', fcMix: 'replace' },
@@ -8444,6 +8552,8 @@ function buildSettings() {
       cChk(() => P.map.stations, prefSet(P.map, 'stations'), 'Show station dots'),
       cChk(() => P.map.fills, prefSet(P.map, 'fills'), 'Shade forecast intensity during warnings'),
       cChk(() => P.map.labels, prefSet(P.map, 'labels'), 'City and region labels'),
+      cChk(() => P.map.preBox, prefSet(P.map, 'preBox'), 'Detection boxes before the EEW', 'Light green boxes around the stations that have felt it: the rawest guess at where it is.'),
+      cChk(() => P.map.preEst, prefSet(P.map, 'preEst'), 'Rough estimate circles before the EEW', 'Once a few stations have it, light green P and S circles from a first guess that settles each second, until the first EEW takes over.'),
       cChk(() => P.map.truth, prefSet(P.map, 'truth'), 'Show the true wavefront before the first EEW')),
     h('div', { class: 'list' },
       cChk(() => P.map.clock, prefSet(P.map, 'clock'), 'Clock and station counter panel'),

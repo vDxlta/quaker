@@ -6,6 +6,7 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - Projects: every simulation saves itself in your browser, and preloaded scenarios, real quakes and imports each open as a new project
 - Easy mode: presets, sliders, click the map to place the epicenter
 - Advanced mode: a timeline editor for quakes, EEW reports, info boxes, camera keys and sound cues, with key-moment markers, multi-select, right-click menus, snapping, foldable tracks and a Reset all button
+- Before the first EEW: light green detection boxes around the stations that felt it, then rough-estimate P and S circles that settle until the EEW takes over
 - Intro screen: a title card over a blurred map that clears to reveal the graphics before the quake starts
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
 - Video recording, frame pictures, share codes and project files
