@@ -313,6 +313,19 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .f.wide { grid-template-columns: 1fr; }
 .list { display: flex; flex-direction: column; gap: 6px; }
 .li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; background: var(--panel-3); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; }
+.font-roles { gap: 10px; }
+.font-role { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+.font-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.font-head > label { font-size: 14px; color: var(--muted); }
+.font-head .row { flex-wrap: wrap; min-width: 0; }
+.font-head select { max-width: 100%; min-width: 0; width: 280px; }
+.font-prev { background: #0C141F; color: #F2F5F8; border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.font-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.font-faces { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.chip-x { font: inherit; font-size: 14px; line-height: 1; color: var(--muted); background: none; border: 0; padding: 0 0 0 4px; cursor: pointer; }
+.chip-x:hover, .chip-x:focus-visible { color: var(--text); }
+#setFonts.drop { outline-offset: -4px; }
 .li .sub { font-size: 12px; color: var(--faint); }
 .li .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; grid-column: 1 / -1; }
 
@@ -740,12 +753,14 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
     <div class="dlg-head"><h2 id="setH">Settings<span class="ja">設定</span></h2><button class="btn ghost" type="button" data-close>Close</button></div>
     <div class="tabs" role="tablist" id="setTabs">
       <button role="tab" type="button" data-tab="display" aria-selected="true">Display</button>
+      <button role="tab" type="button" data-tab="fonts" aria-selected="false">Fonts</button>
       <button role="tab" type="button" data-tab="anim" aria-selected="false">Animation</button>
       <button role="tab" type="button" data-tab="cam" aria-selected="false">Camera</button>
       <button role="tab" type="button" data-tab="sound" aria-selected="false">Sounds</button>
       <button role="tab" type="button" data-tab="rec" aria-selected="false">Recording</button>
     </div>
     <div class="dlg-body" data-pane="display" id="setDisplay"></div>
+    <div class="dlg-body" data-pane="fonts" id="setFonts" hidden></div>
     <div class="dlg-body" data-pane="anim" id="setAnim" hidden></div>
     <div class="dlg-body" data-pane="cam" id="setCam" hidden></div>
     <div class="dlg-body" data-pane="sound" id="setSound" hidden></div>
@@ -2644,10 +2659,26 @@ function easyFromReal(DB, q) {
 
 // ============================================================== Quaker v2 · info boxes
 // Every box type knows how to measure and draw itself at (0,0). The renderer handles docking and animation.
-const FONT_JP = '"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic",Meiryo,sans-serif';
-const FONT_NUM = '"Barlow Condensed","Arial Narrow","Roboto Condensed","DejaVu Sans Condensed",sans-serif';
-const FONT_UI = '"Barlow","Segoe UI",Roboto,"Helvetica Neue",sans-serif';
-const fnt = (w, px, fam) => `${w} ${px}px ${fam}`;
+const FONT_JP_BASE = '"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Noto Sans CJK JP","Yu Gothic",Meiryo,sans-serif';
+const FONT_NUM_BASE = '"Barlow Condensed","Arial Narrow","Roboto Condensed","DejaVu Sans Condensed",sans-serif';
+const FONT_UI_BASE = '"Barlow","Segoe UI",Roboto,"Helvetica Neue",sans-serif';
+// the stacks every box draws with: a picked font (Settings → Display → Fonts) goes in front, the defaults stay behind it for missing glyphs
+let FONT_JP = FONT_JP_BASE, FONT_NUM = FONT_NUM_BASE, FONT_UI = FONT_UI_BASE;
+const FONT_CUR = { jp: '', ui: '', num: '' };
+const FONT_SC = { jp: 1, ui: 1, num: 1 };
+function setFontFamilies(fam, sc) {
+  for (const k of ['jp', 'ui', 'num']) {
+    FONT_CUR[k] = fam[k] || '';
+    FONT_SC[k] = Math.min(1.5, Math.max(0.6, +(sc && sc[k]) || 1));
+  }
+  FONT_JP = FONT_CUR.jp ? FONT_CUR.jp + ',' + FONT_JP_BASE : FONT_JP_BASE;
+  FONT_NUM = FONT_CUR.num ? FONT_CUR.num + ',' + FONT_NUM_BASE : FONT_NUM_BASE;
+  FONT_UI = FONT_CUR.ui ? FONT_CUR.ui + ',' + FONT_UI_BASE : FONT_UI_BASE;
+}
+const fnt = (w, px, fam) => {
+  const k = fam === FONT_NUM ? FONT_SC.num : fam === FONT_JP ? FONT_SC.jp : fam === FONT_UI ? FONT_SC.ui : 1;
+  return `${w} ${k === 1 ? px : Math.round(px * k * 10) / 10}px ${fam}`;
+};
 const PANEL_BG = 'rgba(12,20,31,0.93)';
 
 // ---------------------------------------------------------------- on-screen language
@@ -3037,8 +3068,9 @@ BOX.eew = {
         const fM = fnt(700, 44, FONT_NUM);
         const mwid = txt(c, 'M', 22, 178, fnt(600, 26, FONT_NUM), '#9FB0C3');
         rollText(c, prev ? prev.M.toFixed(1) : null, rep.M.toFixed(1), 26 + mwid, 178, fM, '#FFFFFF', roll, 44);
-        rollText(c, prev ? String(prev.depth) : null, String(rep.depth), 150, 178, fM, '#FFFFFF', roll, 44);
-        txt(c, 'km', 154 + mw(c, String(rep.depth), fM), 178, fnt(600, 20, FONT_NUM), '#9FB0C3');
+        const dx = Math.max(150, 40 + mwid + mw(c, rep.M.toFixed(1), fM));
+        rollText(c, prev ? String(prev.depth) : null, String(rep.depth), dx, 178, fM, '#FFFFFF', roll, 44);
+        txt(c, 'km', dx + 4 + mw(c, String(rep.depth), fM), 178, fnt(600, 20, FONT_NUM), '#9FB0C3');
         const mi = ee.pred ? ee.pred.maxIdx : -1;
         const pop = prev && ee.pred && roll < 1 ? 1 + 0.12 * Math.sin(roll * Math.PI) : 1;
         if (mi >= 0) iconPop(c, w - 22 - 64, 134, 64, mi, pop); else emptyIcon(c, w - 22 - 64, 134, 64);
@@ -3080,8 +3112,9 @@ BOX.eew = {
     const fM = fnt(700, 56, FONT_NUM);
     const mwid = txt(c, 'M', 22, yy + 60, fnt(600, 32, FONT_NUM), '#9FB0C3');
     rollText(c, prev ? prev.M.toFixed(1) : null, rep.M.toFixed(1), 26 + mwid, yy + 60, fM, '#FFFFFF', roll, 58);
-    rollText(c, prev ? String(prev.depth) : null, String(rep.depth), 170, yy + 60, fM, '#FFFFFF', roll, 58);
-    txt(c, 'km', 175 + mw(c, String(rep.depth), fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3');
+    const dx = Math.max(170, 44 + mwid + mw(c, rep.M.toFixed(1), fM));
+    rollText(c, prev ? String(prev.depth) : null, String(rep.depth), dx, yy + 60, fM, '#FFFFFF', roll, 58);
+    txt(c, 'km', dx + 5 + mw(c, String(rep.depth), fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3');
     const mi = ee.pred ? ee.pred.maxIdx : -1;
     const prevMi = prev && prev.kind !== 'cancel' ? reportPred(env.world, E, prev)?.maxIdx : mi;
     const pop = prevMi !== mi && roll < 1 ? 1 + 0.14 * Math.sin(roll * Math.PI) : 1;
@@ -3150,8 +3183,9 @@ function drawStandby(c, env, en, E, w, h, compact) {
   const fM = fnt(700, 46, FONT_NUM);
   const mwid = txt(c, 'M', 22, 262, fnt(600, 28, FONT_NUM), '#6E8094');
   txt(c, E.ph.M.toFixed(1), 26 + mwid, 262, fM, '#9FB0C3');
-  txt(c, `${Math.round(E.ph.depth)}`, 170, 262, fM, '#9FB0C3');
-  txt(c, 'km', 174 + mw(c, `${Math.round(E.ph.depth)}`, fM), 262, fnt(600, 22, FONT_NUM), '#6E8094');
+  const dx = Math.max(170, 42 + mwid + mw(c, E.ph.M.toFixed(1), fM));
+  txt(c, `${Math.round(E.ph.depth)}`, dx, 262, fM, '#9FB0C3');
+  txt(c, 'km', dx + 4 + mw(c, `${Math.round(E.ph.depth)}`, fM), 262, fnt(600, 22, FONT_NUM), '#6E8094');
   const idle = env.idle;
   txt(c, idle ? 'Press Play to start' : 'Monitoring · waiting for detection', 22, 330, fnt(600, 16, FONT_UI), '#5E7086');
   if (!isEn) txt(c, idle ? '再生ボタンで開始' : '監視中', 22, 356, fnt(700, 14, FONT_JP), '#4B5A6B');
@@ -3280,8 +3314,9 @@ function reportHeader(c, env, en, E, w, opts) {
   const fM = fnt(700, 56, FONT_NUM);
   const mwid = txt(c, 'M', 22, yy + 60, fnt(600, 32, FONT_NUM), '#9FB0C3');
   txt(c, ph.M.toFixed(1), 26 + mwid, yy + 60, fM, '#FFFFFF');
-  if (ph.depth < 5) txt(c, isEn ? 'Very shallow' : 'ごく浅い', 170, yy + 54, fnt(700, isEn ? 24 : 26, LFm), '#FFFFFF');
-  else { const ds = `${Math.round(ph.depth)}`; txt(c, ds, 170, yy + 60, fM, '#FFFFFF'); txt(c, 'km', 175 + mw(c, ds, fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3'); }
+  const dx = Math.max(170, 44 + mwid + mw(c, ph.M.toFixed(1), fM));
+  if (ph.depth < 5) txt(c, isEn ? 'Very shallow' : 'ごく浅い', dx, yy + 54, fnt(700, isEn ? 24 : 26, LFm), '#FFFFFF');
+  else { const ds = `${Math.round(ph.depth)}`; txt(c, ds, dx, yy + 60, fM, '#FFFFFF'); txt(c, 'km', dx + 5 + mw(c, ds, fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3'); }
   if (opts.maxIdx !== undefined) {
     txt(c, isEn ? 'MAX INTENSITY' : '最大震度', w - 22, yy, fnt(700, 14, LFm), '#7D8EA1', 'right');
     const pop = env.prefs.reduced ? 1 : easeFn('backOut')(clamp((en.age - 0.2) / 0.5, 0, 1));
@@ -5370,10 +5405,10 @@ const IDB = {
       let done = false;
       const fin = (v) => { if (!done) { done = true; res(v); } };
       try {
-        const r = indexedDB.open('quaker-v2', 2);
+        const r = indexedDB.open('quaker-v2', 3);
         r.onupgradeneeded = () => {
           const db = r.result;
-          for (const s of ['sounds', 'projects']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+          for (const s of ['sounds', 'projects', 'fonts']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
         };
         r.onsuccess = () => {
           this.db = r.result;
@@ -5428,6 +5463,386 @@ async function removeSoundFile(id) {
   AU.files = AU.files.filter((f) => f.id !== id);
   AU.buffers.delete(id);
   await IDB.del(id);
+}
+
+// ============================================================== Quaker v2 · stage fonts
+// Three roles, each can be the default, a Google Font, a font file you imported, or one installed on this computer.
+// Prefs hold '' | 'g:<Google family>' | 'f:<imported family key>' | 's:<installed font name>'.
+const FONT_ROLES = [
+  ['jp', 'Japanese text', '緊急地震速報 最大震度5強 静岡県西部', 'BIZ UDPGothic'],
+  ['ui', 'English text', 'Earthquake Early Warning · Western Shizuoka', 'Barlow'],
+  ['num', 'Numbers', 'M5.7  10km  01:04:27  No.19', 'Barlow Condensed'],
+];
+// weights each family really ships, since the CSS API refuses a request for one it doesn't have
+const GFONTS = {
+  jp: [
+    ['Noto Sans JP', '400;500;700;800'], ['M PLUS 1p', '400;500;700;800'], ['M PLUS Rounded 1c', '400;500;700;800'],
+    ['Zen Kaku Gothic New', '400;500;700;900'], ['Zen Maru Gothic', '400;500;700;900'], ['Murecho', '400;500;700;800'],
+    ['BIZ UDGothic', '400;700'], ['Kosugi Maru', '400'], ['Sawarabi Gothic', '400'], ['RocknRoll One', '400'],
+    ['Mochiy Pop One', '400'], ['Dela Gothic One', '400'], ['DotGothic16', '400'], ['Noto Serif JP', '400;500;700;800'],
+  ],
+  ui: [
+    ['Inter', '400;500;600;700;800'], ['Roboto', '400;500;600;700;800'], ['Noto Sans', '400;500;600;700;800'],
+    ['Open Sans', '400;500;600;700;800'], ['Montserrat', '400;500;600;700;800'], ['Poppins', '400;500;600;700;800'],
+    ['IBM Plex Sans', '400;500;600;700'], ['Source Sans 3', '400;500;600;700;800'], ['Rubik', '400;500;600;700;800'],
+    ['Archivo', '400;500;600;700;800'], ['Titillium Web', '400;600;700'], ['Exo 2', '400;500;600;700;800'], ['Lato', '400;700;900'],
+  ],
+  num: [
+    ['Roboto Condensed', '400;500;600;700;800'], ['Barlow Semi Condensed', '400;500;600;700;800'], ['Saira Condensed', '400;500;600;700;800'],
+    ['Oswald', '400;500;600;700'], ['Archivo Narrow', '400;500;600;700'], ['Rajdhani', '400;500;600;700'], ['Teko', '400;500;600;700'],
+    ['Bebas Neue', '400'], ['Chakra Petch', '400;500;600;700'], ['Orbitron', '400;500;600;700;800'],
+    ['Share Tech Mono', '400'], ['JetBrains Mono', '400;500;600;700;800'],
+  ],
+};
+const GF_GROUPS = { jp: 'Japanese · Google Fonts', ui: 'Clean sans · Google Fonts', num: 'Numbers and display · Google Fonts' };
+const GF_W = new Map(Object.values(GFONTS).flat());
+const FONT_MAX_MB = 32;
+const FONTS = { files: [], fams: new Map(), g: new Map() };     // files: stored faces, fams: key → {key, family, faces}, g: Google loads
+const cssQ = (n) => '"' + String(n).replace(/["\\;{}<>]/g, '').trim() + '"';
+const famKeyOf = (family) => 'qf' + strHash(String(family).toLowerCase()).toString(36);
+const FONT_LATIN = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·–—’…×°';
+
+// ---------------------------------------------------------------- reading a font's own name and weight
+const tag4 = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+async function inflateTable(u8) {
+  const out = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer();
+  return new DataView(out);
+}
+async function fontInfo(raw) {
+  const dv = new DataView(raw);
+  const sig = dv.getUint32(0), want = ['name', 'OS/2', 'fvar'], tabs = {};
+  if (sig === 0x774F4632) return null;                          // WOFF2 is Brotli inside: go by the file name instead
+  if (sig === 0x774F4646) {                                     // WOFF: zlib per table
+    const n = dv.getUint16(12);
+    for (let i = 0; i < n; i++) {
+      const r = 44 + i * 20, tag = tag4(dv, r);
+      if (!want.includes(tag)) continue;
+      const off = dv.getUint32(r + 4), comp = dv.getUint32(r + 8), orig = dv.getUint32(r + 12);
+      if (comp < orig) { if (typeof DecompressionStream === 'function') tabs[tag] = await inflateTable(new Uint8Array(raw, off, comp)); }
+      else tabs[tag] = new DataView(raw, off, comp);
+    }
+  } else {                                                      // TTF / OTF, or the first font of a collection
+    const base = sig === 0x74746366 ? dv.getUint32(12) : 0;
+    const n = dv.getUint16(base + 4);
+    for (let i = 0; i < n; i++) {
+      const r = base + 12 + i * 16, tag = tag4(dv, r);
+      if (want.includes(tag)) tabs[tag] = new DataView(raw, dv.getUint32(r + 8), dv.getUint32(r + 12));
+    }
+  }
+  const info = { family: '', sub: '', weight: 400, wmax: 0, italic: false };
+  const nm = tabs.name;
+  if (nm) {
+    const cnt = nm.getUint16(2), so = nm.getUint16(4), best = {};
+    for (let i = 0; i < cnt; i++) {
+      const r = 6 + i * 12, pid = nm.getUint16(r), eid = nm.getUint16(r + 2), lid = nm.getUint16(r + 4), id = nm.getUint16(r + 6);
+      if (![1, 2, 16, 17].includes(id)) continue;
+      const len = nm.getUint16(r + 8), off = so + nm.getUint16(r + 10);
+      let s = '', score;
+      if (pid === 3 || pid === 0) { for (let j = 0; j + 1 < len; j += 2) s += String.fromCharCode(nm.getUint16(off + j)); score = lid === 0x409 ? 3 : 2; }
+      else if (pid === 1 && eid === 0) { for (let j = 0; j < len; j++) s += String.fromCharCode(nm.getUint8(off + j)); score = 1; }
+      else continue;
+      s = s.replace(/[\0-\x1f]/g, '').trim();
+      if (s && (!best[id] || score > best[id][0])) best[id] = [score, s];
+    }
+    info.family = (best[16] || best[1] || [0, ''])[1];
+    info.sub = (best[17] || best[2] || [0, ''])[1];
+  }
+  const os = tabs['OS/2'];
+  if (os && os.byteLength >= 64) { info.weight = os.getUint16(4); info.italic = !!(os.getUint16(62) & 1); }
+  else if (info.sub) Object.assign(info, weightFromWords(info.sub));
+  const fv = tabs.fvar;
+  if (fv) {
+    const ao = fv.getUint16(4), ac = fv.getUint16(8), as = fv.getUint16(10);
+    for (let i = 0; i < ac; i++) {
+      const r = ao + i * as;
+      if (tag4(fv, r) === 'wght') { info.weight = Math.round(fv.getInt32(r + 4) / 65536); info.wmax = Math.round(fv.getInt32(r + 12) / 65536); }
+    }
+  }
+  info.weight = Math.min(1000, Math.max(1, info.weight || 400));
+  if (info.wmax && info.wmax <= info.weight) info.wmax = 0;
+  return info;
+}
+const WEIGHT_WORDS = [['extralight', 200], ['ultralight', 200], ['semibold', 600], ['demibold', 600], ['extrabold', 800], ['ultrabold', 800],
+  ['hairline', 100], ['thin', 100], ['light', 300], ['medium', 500], ['heavy', 900], ['black', 900], ['bold', 700], ['regular', 400], ['book', 400]];
+function weightFromWords(s) {
+  const t = String(s).toLowerCase().replace(/[\s_-]/g, '');
+  const hit = WEIGHT_WORDS.find(([w]) => t.includes(w));
+  return { weight: hit ? hit[1] : 400, italic: /italic|oblique/.test(t) };
+}
+function guessFromName(file) {
+  const base = String(file).replace(/\.[a-z0-9]+$/i, '');
+  const family = base.split('-')[0].replace(/_/g, ' ').trim() || base || 'My font';
+  return { family, ...weightFromWords(base.slice(family.length)), wmax: /variable|\bvf\b|wght/i.test(base) ? 900 : 0 };
+}
+const W_NAMES = { 100: 'Thin', 200: 'ExtraLight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'SemiBold', 700: 'Bold', 800: 'ExtraBold', 900: 'Black' };
+const faceLabel = (f) => (f.wmax ? `Variable ${f.weight}–${f.wmax}` : W_NAMES[Math.round(f.weight / 100) * 100] || String(f.weight)) + (f.italic ? ' Italic' : '');
+
+// ---------------------------------------------------------------- imported files
+function regFamily(key) {
+  const old = FONTS.fams.get(key);
+  if (old) for (const ff of old.faces) try { document.fonts.delete(ff); } catch (e) { /* not added */ }
+  const files = FONTS.files.filter((f) => famKeyOf(f.family) === key);
+  if (!files.length) { FONTS.fams.delete(key); return; }
+  const upright = files.filter((f) => !f.italic);
+  const faces = [];
+  for (const f of files) {
+    // a family with one upright face draws every weight with it, as designed, instead of a smeared fake bold
+    const w = f.wmax ? `${f.weight} ${f.wmax}` : (!f.italic && upright.length === 1) || (f.italic && upright.length === 0 && files.length === 1) ? '1 1000' : String(f.weight);
+    try {
+      const ff = new FontFace(key, f.raw, { weight: w, style: f.italic ? 'italic' : 'normal' });
+      document.fonts.add(ff);
+      ff.load().catch(() => {});
+      faces.push(ff);
+    } catch (e) { /* this browser won't take it */ }
+  }
+  FONTS.fams.set(key, { key, family: files[0].family, files, faces });
+}
+async function loadFontFiles() {
+  const recs = (await IDB.all('fonts')) || [];
+  FONTS.files = recs.filter((r) => r && r.id && r.raw && r.family).sort((a, b) => (a.added || 0) - (b.added || 0));
+  for (const key of new Set(FONTS.files.map((f) => famKeyOf(f.family)))) regFamily(key);
+  if (FONTS.files.length) { fontsSig = ''; applyFonts(); }
+}
+async function addFontFile(file) {
+  if (!file) return null;
+  if (!/\.(ttf|otf|ttc|otc|woff2?)$/i.test(file.name) && !/font/i.test(file.type || '')) throw new Error(`“${file.name}” isn’t a font file. Use TTF, OTF, WOFF or WOFF2.`);
+  if (file.size > FONT_MAX_MB * 1048576) throw new Error(`“${file.name}” is over ${FONT_MAX_MB} MB. Try the WOFF2 version or a subset.`);
+  const raw = await file.arrayBuffer();
+  try { await new FontFace('qfcheck', raw.slice(0)).load(); }
+  catch (e) { throw new Error(`This browser can’t read “${file.name}” as a font.`); }
+  let info = null;
+  try { info = await fontInfo(raw); } catch (e) { info = null; }
+  const g = guessFromName(file.name);
+  const rec = {
+    id: newId('t'), file: file.name.slice(0, 80), raw, size: raw.byteLength, added: Date.now(),
+    family: ((info && info.family) || g.family).slice(0, 60),
+    weight: info ? info.weight : g.weight, wmax: info ? info.wmax : g.wmax, italic: info ? info.italic : g.italic,
+  };
+  const key = famKeyOf(rec.family);
+  const same = (f) => famKeyOf(f.family) === key && f.weight === rec.weight && !!f.wmax === !!rec.wmax && !!f.italic === !!rec.italic;
+  const dup = FONTS.files.find(same);
+  if (dup) { FONTS.files = FONTS.files.filter((f) => f !== dup); IDB.del(dup.id, 'fonts'); }
+  FONTS.files.push(rec);
+  regFamily(key);
+  const ok = await IDB.put(rec, 'fonts');
+  fontsSig = '';
+  return { key, family: rec.family, face: faceLabel(rec), stored: !!ok, replaced: !!dup };
+}
+async function removeFontFamily(key) {
+  const gone = FONTS.files.filter((f) => famKeyOf(f.family) === key);
+  FONTS.files = FONTS.files.filter((f) => famKeyOf(f.family) !== key);
+  for (const f of gone) await IDB.del(f.id, 'fonts');
+  regFamily(key);
+  const F = S.prefs.fonts;
+  for (const [r] of FONT_ROLES) if (F[r] === 'f:' + key) F[r] = '';
+  fontsSig = '';
+}
+async function removeFontFace(id) {
+  const f = FONTS.files.find((x) => x.id === id);
+  if (!f) return;
+  FONTS.files = FONTS.files.filter((x) => x !== f);
+  await IDB.del(id, 'fonts');
+  regFamily(famKeyOf(f.family));
+  fontsSig = '';
+}
+
+// ---------------------------------------------------------------- Google Fonts
+function gfontLoad(name, force) {
+  const st = FONTS.g.get(name);
+  if (st && (st.ok !== false || !force)) return st.p;
+  const url = (w) => 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(name).replace(/%20/g, '+') + (w ? ':wght@' + w : '') + '&display=swap';
+  const ent = { ok: null, p: null };
+  ent.p = new Promise((res) => {
+    const add = (w, retry) => {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = url(w); l.dataset.gfont = name;
+      l.onload = () => res(true);
+      l.onerror = () => { l.remove(); if (retry) add('', false); else res(false); };
+      document.head.append(l);
+    };
+    const w = GF_W.get(name) || '';
+    add(w, !!w);
+  }).then((ok) => {
+    ent.ok = ok;
+    if (ok) { fontKey = ''; loadFontsFor(S.world); }
+    else toast(`Couldn’t load “${name}” from Google Fonts. Check your connection, then pick it again.`, 3600);
+    return ok;
+  });
+  FONTS.g.set(name, ent);
+  return ent.p;
+}
+
+// ---------------------------------------------------------------- installed fonts
+let _fontProbe = null;
+function fontInstalled(name) {
+  if (!name) return false;
+  if (!_fontProbe) _fontProbe = document.createElement('canvas').getContext('2d');
+  const c = _fontProbe, s = 'mmmmmmmmmlli10WQ@地震速報緊急';
+  for (const base of ['monospace', 'serif', 'sans-serif']) {
+    c.font = `40px ${base}`;
+    const w0 = c.measureText(s).width;
+    c.font = `40px ${cssQ(name)}, ${base}`;
+    if (Math.abs(c.measureText(s).width - w0) > 0.01) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------- applying
+let fontsSig = '';
+function fontFamilyOf(v) {
+  if (!v || typeof v !== 'string') return '';
+  const k = v.slice(0, 2), n = v.slice(2).trim();
+  if (!n) return '';
+  if (k === 'g:' || k === 's:') return cssQ(n);
+  if (k === 'f:') return FONTS.fams.has(n) ? cssQ(n) : '';
+  return '';
+}
+function applyFonts() {
+  const F = S.prefs.fonts;
+  if (!F) return;
+  for (const [r] of FONT_ROLES) if (typeof F[r] === 'string' && F[r].startsWith('g:') && GF_W.has(F[r].slice(2))) gfontLoad(F[r].slice(2));
+  const fam = {}, sc = {};
+  for (const [r] of FONT_ROLES) { fam[r] = fontFamilyOf(F[r]); sc[r] = F[r + 'Scale']; }
+  const sig = JSON.stringify([fam, sc]);
+  if (sig === fontsSig) return;
+  fontsSig = sig;
+  setFontFamilies(fam, sc);
+  fontKey = '';
+  if (S.world) loadFontsFor(S.world);
+  invalidateText();
+  needRender = true;
+}
+
+// ---------------------------------------------------------------- settings tab
+let _fontPick = null;
+function pickFontFiles(onDone) {
+  if (!_fontPick) {
+    _fontPick = h('input', { type: 'file', multiple: true, accept: '.ttf,.otf,.ttc,.otc,.woff,.woff2,font/*', class: 'sr', 'aria-hidden': 'true', tabindex: '-1' });
+    document.body.append(_fontPick);
+    _fontPick.addEventListener('change', () => {
+      const list = [..._fontPick.files || []];
+      const cb = _fontPick._cb;
+      _fontPick.value = '';
+      importFonts(list, cb);
+    });
+  }
+  _fontPick._cb = onDone;
+  _fontPick.click();
+}
+async function importFonts(list, cb) {
+  let last = null, n = 0;
+  for (const f of list) {
+    try { last = await addFontFile(f); n++; }
+    catch (e) { toast(e.message, 3600); }
+  }
+  if (!last) return null;
+  toast(n > 1 ? `Imported ${n} font files.` : `Imported ${last.family} ${last.face}${last.replaced ? ' (replaced the old copy)' : ''}.${last.stored ? '' : ' This browser won’t keep it after this visit.'}`, 2800);
+  if (cb) cb(last.key);
+  applyFonts();
+  buildFontSettings();
+  return last;
+}
+function dropFonts(el, cb) {
+  const has = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+  el.addEventListener('dragover', (e) => { if (has(e)) { e.preventDefault(); el.classList.add('drop'); } });
+  el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove('drop'); });
+  el.addEventListener('drop', (e) => {
+    if (!has(e)) return;
+    e.preventDefault(); el.classList.remove('drop');
+    const list = [...(e.dataTransfer.files || [])];
+    if (list.length) importFonts(list, cb);
+  });
+}
+const fontStack = (role) => {
+  const fam = fontFamilyOf(S.prefs.fonts[role]);
+  const base = role === 'jp' ? FONT_JP_BASE : role === 'num' ? FONT_NUM_BASE : FONT_UI_BASE;
+  return fam ? fam + ',' + base : base;
+};
+function buildFontSettings() {
+  const root = $('#setFonts');
+  if (!root) return;
+  const keepScroll = root.scrollTop;
+  root.textContent = '';
+  const F = S.prefs.fonts;
+  const fams = [...FONTS.fams.values()].sort((a, b) => a.family.localeCompare(b.family));
+  const roles = h('div', { class: 'list font-roles' });
+  for (const [role, label, sample, def] of FONT_ROLES) {
+    const cur = typeof F[role] === 'string' ? F[role] : '';
+    const order = role === 'jp' ? ['jp', 'ui', 'num'] : role === 'ui' ? ['ui', 'num', 'jp'] : ['num', 'ui', 'jp'];
+    const opts = [['', `Default (${def})`]];
+    if (cur.startsWith('f:') && !FONTS.fams.has(cur.slice(2))) opts.push([cur, 'Missing font (import it again)']);
+    if (fams.length) opts.push({ label: 'Your fonts', items: fams.map((f) => ['f:' + f.key, f.family]) });
+    for (const g of order) opts.push({ label: GF_GROUPS[g], items: GFONTS[g].map(([n]) => ['g:' + n, n]) });
+    opts.push({ label: 'Other', items: [['sys', 'A font installed on this computer…']] });
+    const scale = () => +F[role + 'Scale'] || 1;
+    const prev = h('div', { class: 'font-prev', text: sample, lang: role === 'jp' ? 'ja' : 'en' });
+    const paint = () => { prev.style.fontFamily = fontStack(role); prev.style.fontSize = (role === 'num' ? 24 : 20) * scale() + 'px'; };
+    paint();
+    const sel = cSel(() => (cur.startsWith('s:') ? 'sys' : cur), (v) => {
+      if (v === 'sys') F[role] = 's:' + (cur.startsWith('s:') ? cur.slice(2) : '');
+      else {
+        F[role] = v;
+        if (v.startsWith('g:')) gfontLoad(v.slice(2), true);
+      }
+      prefsChanged(); buildFontSettings();
+      if (v === 'sys') { const i = $('#fontSys-' + role); if (i) i.focus(); }
+    }, opts);
+    sel.setAttribute('aria-label', label + ' font');
+    const head = h('div', { class: 'font-head' },
+      h('label', { for: (sel.id = 'fontSel-' + role), text: label }),
+      h('div', { class: 'row' }, sel,
+        h('button', { type: 'button', class: 'btn sm', text: 'Import…', title: 'Import a font file and use it for ' + label.toLowerCase(), onclick: () => pickFontFiles((key) => { F[role] = 'f:' + key; prefsChanged(); }) })));
+    const box = h('div', { class: 'li font-role', 'data-role': role }, head);
+    if (cur.startsWith('s:')) {
+      const hint = h('p', { class: 'note' });
+      const check = () => {
+        const n = (F[role] || '').slice(2).trim();
+        hint.textContent = !n ? 'Type the font’s name as your computer lists it, like “Yu Gothic” or “Helvetica Neue”.'
+          : fontInstalled(n) ? `Found “${n}” on this computer.` : `Can’t find “${n}” here, so the default shows instead. Check the spelling, or import the file.`;
+      };
+      const inp = cText(() => cur.slice(2), (v) => { F[role] = 's:' + v.slice(0, 60); prefsChanged(); paint(); check(); }, { ph: 'Font name', max: 60 });
+      inp.id = 'fontSys-' + role;
+      inp.setAttribute('aria-label', 'Installed font name for ' + label.toLowerCase());
+      check();
+      box.append(inp, hint);
+    }
+    box.append(prev, fRow('Size', cRange(scale, (v) => { F[role + 'Scale'] = v; prefsChanged(); paint(); }, { min: 0.8, max: 1.25, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })));
+    if (cur.startsWith('g:') && FONTS.g.get(cur.slice(2)) && FONTS.g.get(cur.slice(2)).ok === false) box.append(h('p', { class: 'note', text: 'Couldn’t reach Google Fonts, so the default shows for now.' }));
+    roles.append(box);
+  }
+  // your files
+  const files = h('div', { class: 'list font-files' });
+  for (const f of fams) {
+    const uses = FONT_ROLES.filter(([r]) => F[r] === 'f:' + f.key).map(([r, l]) => (r === 'num' ? 'numbers' : l));
+    const mb = f.files.reduce((a, x) => a + (x.size || 0), 0) / 1048576;
+    const faces = h('div', { class: 'font-faces' });
+    for (const x of f.files.slice().sort((a, b) => a.weight - b.weight || a.italic - b.italic)) {
+      faces.append(h('span', { class: 'chip', title: x.file }, faceLabel(x),
+        f.files.length > 1 ? h('button', { type: 'button', class: 'chip-x', text: '×', 'aria-label': `Remove ${f.family} ${faceLabel(x)}`, onclick: async () => { await removeFontFace(x.id); applyFonts(); buildFontSettings(); } }) : null));
+    }
+    files.append(h('div', { class: 'li' },
+      h('div', { style: 'min-width:0' },
+        h('div', { class: 'font-name', text: f.family, style: `font-family:${cssQ(f.key)},${FONT_UI_BASE}` }),
+        h('div', { class: 'sub', text: `${f.files.length} file${f.files.length > 1 ? 's' : ''} · ${mb < 0.1 ? '<0.1' : mb.toFixed(1)} MB${uses.length ? ' · used for ' + uses.join(', ') : ''}` }),
+        faces),
+      h('div', { class: 'row' },
+        cSel(() => '', (v) => { if (!v) return; for (const [r] of FONT_ROLES) if (v === r || v === 'all') F[r] = 'f:' + f.key; prefsChanged(); buildFontSettings(); },
+          [['', 'Use for…'], ['jp', 'Japanese text'], ['ui', 'English text'], ['num', 'Numbers'], ['all', 'All three']]),
+        h('button', { type: 'button', class: 'btn sm danger', text: 'Remove', onclick: async () => { await removeFontFamily(f.key); prefsChanged(); applyFonts(); buildFontSettings(); } }))));
+  }
+  if (!fams.length) files.append(h('p', { class: 'note', text: 'No fonts yet. Drop font files here, or use Import.' }));
+  const up = h('input', { type: 'file', multiple: true, accept: '.ttf,.otf,.ttc,.otc,.woff,.woff2,font/*', class: 'sr', id: 'fontUp' });
+  up.addEventListener('change', () => { const list = [...(up.files || [])]; up.value = ''; importFonts(list, null); });
+  const any = FONT_ROLES.some(([r]) => F[r] || (+F[r + 'Scale'] || 1) !== 1);
+  root.append(
+    h('p', { class: 'note', text: 'Fonts for everything on the video: the EEW boxes, map labels, the clock and the intro screen. Characters a font doesn’t have fall back to the default, so an English font for Japanese text still shows the kanji.' }),
+    roles,
+    h('div', { class: 'row' }, any ? btn('Reset fonts', () => { S.prefs.fonts = deepCopy(PREFS_DEFAULT.fonts); prefsChanged(); buildFontSettings(); toast('Fonts reset.', 1600); }, 'btn sm ghost') : null),
+    h('div', { class: 'fg' }, h('div', { class: 'gt', text: 'Your fonts' }),
+      h('p', { class: 'note', text: `TTF, OTF, WOFF or WOFF2, up to ${FONT_MAX_MB} MB each. Add several weights of one family (Regular, Bold…) and they group together. They stay in this browser, so share codes and project files don’t carry them: anyone else sees the default, or the same Google Font if you picked one. Only use fonts you’re allowed to.` }),
+      files, h('div', { class: 'row' }, h('label', { class: 'btn', for: 'fontUp', text: 'Import fonts…' }), up)));
+  if (!root._drop) { root._drop = true; dropFonts(root, null); }
+  root.scrollTop = keepScroll;
 }
 
 // ============================================================== Quaker v2 · Advanced editor + form helpers
@@ -7158,6 +7573,7 @@ const PREFS_DEFAULT = {
   sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'up', fcMix: 'replace' },
   rec: { res: 1080, fps: 30, sound: true },
   cam: { ...CAM_DEFAULT },
+  fonts: { jp: '', ui: '', num: '', jpScale: 1, uiScale: 1, numScale: 1 },
   lang: 'ja',
 };
 const ANIM_PRESETS = {
@@ -7231,6 +7647,7 @@ function applyPrefs() {
   UI_LANG = p.lang;
   if (appliedLang !== p.lang) { appliedLang = p.lang; applyLangUI(); }
   if (S.world) applyLevelSounds(S.world, S.eff);
+  applyFonts();
   needRender = true;
 }
 // ---------------------------------------------------------------- language (on-screen graphics + the Japanese bits of the UI)
@@ -8602,6 +9019,8 @@ function buildSettings() {
       h('p', { class: 'note', text: 'With detection zoom off, the auto camera starts near the epicenter right away and widens as the S-wave grows.' }),
       h('p', { class: 'note', text: 'The Camera button in the playback bar turns the auto camera off entirely, and dragging the map pauses it. Press Z anywhere to flip detection zoom.' }),
       h('p', { class: 'note', text: 'In Advanced, camera keys with the target “Follow the waves” use this too.' }))));
+  // fonts
+  buildFontSettings();
   // sound
   buildSoundSettings();
   // recording
@@ -8800,10 +9219,15 @@ function loadFontsFor(world) {
   if (world.my) text += world.my.areaName;
   for (const p of DB.parents) if (p.c === 'JP') text += p.ja;
   const uniq = [...new Set(text)].filter((ch) => ch.charCodeAt(0) > 0x2000).join('');
-  const key = uniq.length + ':' + strHash(uniq);
+  const key = uniq.length + ':' + strHash(uniq) + ':' + FONT_CUR.jp + FONT_CUR.ui + FONT_CUR.num;
   if (key === fontKey) return;
   fontKey = key;
-  Promise.all([
+  const loads = [];
+  if (FONT_CUR.jp) for (const w of [500, 700, 800]) loads.push(document.fonts.load(`${w} 20px ${FONT_CUR.jp}`, w === 700 ? uniq + FONT_LATIN : uniq.slice(0, 300) + FONT_LATIN));
+  if (FONT_CUR.ui) for (const w of [500, 600, 700, 800]) loads.push(document.fonts.load(`${w} 16px ${FONT_CUR.ui}`, FONT_LATIN));
+  if (FONT_CUR.num) for (const w of [500, 600, 700]) loads.push(document.fonts.load(`${w} 40px ${FONT_CUR.num}`, FONT_LATIN));
+  Promise.allSettled([
+    ...loads,
     document.fonts.load(`700 20px "BIZ UDPGothic"`, uniq),
     document.fonts.load(`400 20px "BIZ UDPGothic"`, uniq.slice(0, 400)),
     document.fonts.load(`700 40px "Barlow Condensed"`, '0123456789M.km'),
@@ -8812,7 +9236,7 @@ function loadFontsFor(world) {
     document.fonts.load(`600 16px "Barlow"`, 'ABCabc'),
     document.fonts.load(`500 16px "Barlow"`, 'ABCabc'),
     document.fonts.load(`700 16px "Barlow"`, 'ABCabc'),
-  ]).then(() => { invalidateText(); needRender = true; }).catch(() => {});
+  ]).then(() => { invalidateText(); needRender = true; });
 }
 
 // ---------------------------------------------------------------- keyboard
@@ -8885,6 +9309,7 @@ async function boot() {
   initRenderer(canvas);
   S.prefs = mergePrefs(loadJSON('quaker.v2.prefs'));
   applyPrefs();
+  loadFontFiles().catch(() => {});
   bindTransport(); bindEasy(); bindLibrary(); bindKeys(); edInit();
   setShow = bindTabs($('#setTabs'), $('#dlgSettings'));
   updatePlayButton();
@@ -8928,7 +9353,7 @@ async function boot() {
     S, R, AU, REC, ED,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
-      edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles,
+      edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
       previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop },
   };

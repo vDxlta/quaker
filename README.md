@@ -11,5 +11,6 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
 - Video recording, frame pictures, share codes and project files
 - Custom sounds for every alert, a sound per forecast shindo (so the EEW can sound different once it's a warning), and a different sound for each shindo level as the measured shaking climbs
+- Custom fonts for the on-screen graphics: pick Google Fonts, a font installed on your computer, or import your own TTF, OTF, WOFF or WOFF2 files, separately for Japanese text, English text and numbers, each with its own size
 
 Everything runs in the browser from one `index.html`. Station data, intensities and EEW reports are simulated, not real-time data.
