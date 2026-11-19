@@ -321,6 +321,14 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 @keyframes syncPulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .sync-status.busy .sync-dot { animation: none; } }
 .sync-skips { margin: 0; padding-left: 18px; }
+.sync-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 14px; line-height: 1.5; color: var(--text); }
+.sync-steps a { color: var(--accent, #5AA9FF); }
+.sync-tok { margin-top: 6px; flex-wrap: wrap; }
+.sync-tok input { flex: 1 1 220px; min-width: 0; font: inherit; font-size: 14px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 6px 9px; }
+.sync-err:empty { display: none; }
+.sync-err { color: #F2B53A; }
+.sync-btns { flex-wrap: wrap; }
+.sync-btns a.btn { text-decoration: none; }
 .font-roles { gap: 10px; }
 .font-role { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
 .font-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
@@ -7573,18 +7581,20 @@ function edInit() {
 }
 
 // ============================================================== Quaker v2 · your stuff on every device
-// Two ways across: automatic sync through your Claude account (when Quaker is open as a Claude artifact), and a
-// backup file that works anywhere. What travels: settings, projects you've worked on (untouched preloaded quakes
-// stay put), imported sounds and imported fonts.
+// Three ways across:
+//  - GitHub sync (the website): two secret gists on your own GitHub account, one for settings and projects, one for
+//    sound and font files, reached with a token you paste once per device
+//  - Claude sync (when Quaker is open as a Claude artifact): your private space in the artifact's store
+//  - a backup file, anywhere
+// What travels: settings, projects you've worked on (untouched preloaded quakes stay put), imported sounds and fonts.
 //
-// Sync keeps one document per thing under your private data/users/<you> path, plus the sound and font files as
-// artifact assets. Each device remembers the version of every document it last agreed with (the ledger), so it can
-// tell "changed over there" from "changed here". When both changed, the newer edit wins, and an edit always beats
-// a deletion so nothing you touched disappears.
+// Both syncs keep one document per thing. Each device remembers the version of every document it last agreed with
+// (the ledger), so it can tell "changed over there" from "changed here". When both changed, the newer edit wins, and
+// an edit always beats a deletion, so nothing you touched disappears. Every write bumps a revision number, so a
+// late, stale read can never roll a newer version back.
 const SY = {
-  cfg: { on: true, files: true, bakFiles: true, uid: '', pa: 0, L: {} },
-  db: null, assets: null, user: null, col: null, unsub: null,
-  status: 'off', msg: '', at: 0, ready: false, wait: 0, timer: 0, chain: Promise.resolve(), backoff: 0,
+  cfg: { on: true, files: true, bakFiles: true, uid: '', pa: 0, L: {}, gh: null },
+  st: null, status: 'off', msg: '', at: 0, ready: false, wait: 0, timer: 0, chain: Promise.resolve(), backoff: 0,
   remote: new Map(), chunks: new Map(), skip: new Map(), sigs: new WeakMap(),
   chunkSize: 60000,
 };
@@ -7595,7 +7605,8 @@ const blobUrl = (id) => '/_blob/' + id;
 function syncCfgLoad() {
   const c = loadJSON('quaker.v2.sync');
   if (c && typeof c === 'object') {
-    SY.cfg = { on: c.on !== false, files: c.files !== false, bakFiles: c.bakFiles !== false, uid: String(c.uid || ''), pa: +c.pa || 0, L: c.L && typeof c.L === 'object' ? c.L : {} };
+    const gh = c.gh && typeof c.gh === 'object' && typeof c.gh.token === 'string' && c.gh.token ? c.gh : null;
+    SY.cfg = { on: c.on !== false, files: c.files !== false, bakFiles: c.bakFiles !== false, uid: String(c.uid || ''), pa: +c.pa || 0, L: c.L && typeof c.L === 'object' ? c.L : {}, gh };
   }
 }
 function syncCfgSave() { try { localStorage.setItem('quaker.v2.sync', JSON.stringify(SY.cfg)); } catch (e) { /* storage off */ } }
@@ -7618,10 +7629,13 @@ function fontMime(raw) {
   const t = raw.byteLength >= 4 ? new DataView(raw).getUint32(0) : 0;
   return t === 0x774F4632 ? 'font/woff2' : t === 0x774F4646 ? 'font/woff' : t === 0x4F54544F ? 'font/otf' : t === 0x00010000 || t === 0x74727565 ? 'font/ttf' : '';
 }
+const syncErr = (code, message) => Object.assign(new Error(message), { code });
 
 // ---------------------------------------------------------------- what this device has
 const syncSig = (o) => { const s = JSON.stringify(o); return strHash(s).toString(36) + '.' + s.length.toString(36); };
 const projSyncSig = (p) => syncSig([p.name, p.mode, p.easy, p.adv, p.src]);
+const soundSig = (f) => 's' + f.raw.byteLength + ':' + f.name;
+const fontSig = (f) => 'f' + f.raw.byteLength + ':' + f.family + ':' + f.weight + ':' + (f.italic ? 1 : 0);
 function localItems() {
   const m = new Map();
   m.set('prefs', { kind: 'prefs', sig: syncSig(S.prefs), t: SY.cfg.pa || 0 });
@@ -7632,18 +7646,215 @@ function localItems() {
     m.set('p-' + p.id, { kind: 'p', sig, t: Math.max(+p.updated || 0, +p.created || 0), rec: p });
   }
   if (SY.cfg.files) {
-    for (const f of AU.files) if (okId(f.id) && f.raw) m.set('s-' + f.id, { kind: 's', sig: 's' + f.raw.byteLength + ':' + f.name, t: 0, rec: f });
-    for (const f of FONTS.files) if (okId(f.id) && f.raw) m.set('f-' + f.id, { kind: 'f', sig: 'f' + f.raw.byteLength + ':' + f.family + ':' + f.weight + ':' + (f.italic ? 1 : 0), t: f.added || 0, rec: f });
+    for (const f of AU.files) if (okId(f.id) && f.raw) m.set('s-' + f.id, { kind: 's', sig: soundSig(f), t: 0, rec: f });
+    for (const f of FONTS.files) if (okId(f.id) && f.raw) m.set('f-' + f.id, { kind: 'f', sig: fontSig(f), t: f.added || 0, rec: f });
   }
   return m;
 }
 
+// ---------------------------------------------------------------- store: Claude (the artifact's private per-person space)
+async function claudeStore() {
+  const use = (n) => window.claude.use(n).catch(() => null);
+  const [db, user, assets] = await Promise.all([use('db'), use('user'), use('assets')]);
+  const uid = db && user ? await user.id().catch(() => null) : null;
+  const canWrite = user ? await user.can('data.write').catch(() => null) : null;
+  if (!db || !uid || canWrite === false) throw syncErr('view', 'This view can’t sync');
+  const col = db.collection('data/users/' + uid);
+  let unsub = null;
+  return {
+    kind: 'claude', uid, canFiles: !!assets, chunk: 60000,
+    listen(onDocs, onErr) {
+      unsub = col.onSnapshot((snap) => {
+        if (snap.metadata && snap.metadata.fromCache && !SY.ready) return;   // wait for the store's own answer
+        onDocs(snap.docs.map((d) => [d.id, d.data()]));
+      }, onErr);
+    },
+    set: (id, body) => col.doc(id).set(body),
+    del: (id) => col.doc(id).delete().catch(() => {}),
+    async upload(raw, mime) {
+      let blob, enc = 'raw';
+      if (mime && raw.byteLength <= FILE_MAX) blob = new Blob([raw], { type: mime });
+      else { blob = new Blob([bufToB64(raw)], { type: 'text/plain' }); enc = 'b64'; }
+      const up = await assets.upload(blob, { type: blob.type });
+      return { asset: up.id, enc };
+    },
+    dropFile(r) { if (r && r.asset && assets) assets.delete(r.asset).catch(() => {}); },
+    async getFile(r) {
+      const res = await fetch(blobUrl(r.asset));
+      if (!res.ok) throw syncErr('invalid_argument', 'A synced file is missing');
+      return r.enc === 'b64' ? b64ToBuf(await res.text()) : res.arrayBuffer();
+    },
+    async flush() { /* every write already went out */ },
+    async wipe(remote) {
+      for (const [id, x] of remote) { if (x && x.asset && assets) await assets.delete(x.asset).catch(() => {}); await col.doc(id).delete().catch(() => {}); }
+    },
+    stop() { if (unsub) try { unsub(); } catch (e) { /* closed */ } unsub = null; },
+  };
+}
+
+// ---------------------------------------------------------------- store: GitHub (two secret gists on your account)
+const GH = {
+  api: 'https://api.github.com',
+  descDocs: 'Quaker sync · settings and projects',
+  descFiles: 'Quaker sync · sound and font files',
+  part: 700000,           // characters per file chunk, under the 1 MB a gist file shows through the API
+  batch: 3500000,         // characters per save request
+  poll: 30000,
+  tokenUrl: 'https://github.com/settings/tokens/new?scopes=gist&description=Quaker%20sync',
+};
+async function ghApi(token, method, path, body, etag) {
+  const headers = { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token };
+  if (body) headers['Content-Type'] = 'application/json';
+  if (etag) headers['If-None-Match'] = etag;
+  let res;
+  try { res = await fetch(GH.api + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); }
+  catch (e) { throw syncErr('unavailable', 'Can’t reach GitHub'); }
+  if (res.status === 304 || res.ok) return res;
+  let msg = '';
+  try { msg = (await res.json()).message || ''; } catch (e) { /* no body */ }
+  if (res.status === 401) throw syncErr('gh_auth', 'GitHub didn’t accept the token');
+  if (res.status === 429 || (res.status === 403 && (res.headers.get('x-ratelimit-remaining') === '0' || /rate limit/i.test(msg)))) {
+    const reset = +res.headers.get('x-ratelimit-reset') * 1000 || 0, after = +res.headers.get('retry-after') * 1000 || 0;
+    throw Object.assign(syncErr('resource_exhausted', 'GitHub asked Quaker to slow down'), { until: Math.max(Date.now() + 60000, reset, Date.now() + after) });
+  }
+  if (res.status === 403) throw syncErr('gh_scope', 'The token can’t reach your gists');
+  if (res.status === 404) throw syncErr('gh_missing', 'The sync gist is gone');
+  if (res.status === 422) throw syncErr('gh_invalid', msg || 'GitHub refused that save');
+  throw syncErr('unavailable', `GitHub answered ${res.status}`);
+}
+// find this account's two sync gists, or make them
+async function ghLink(token) {
+  const me = await (await ghApi(token, 'GET', '/user')).json();
+  let docs = null, files = null;
+  for (let page = 1; page <= 10 && !(docs && files); page++) {
+    const list = await (await ghApi(token, 'GET', `/gists?per_page=100&page=${page}`)).json();
+    for (const g of list) {
+      if (!docs && g.description === GH.descDocs) docs = g;
+      if (!files && g.description === GH.descFiles) files = g;
+    }
+    if (list.length < 100) break;
+  }
+  const make = async (description, what) => (await ghApi(token, 'POST', '/gists', { description, public: false,
+    files: { 'README.md': { content: `Quaker keeps your synced ${what} here, so they follow you to every device. It's a secret gist: only people with the link can see it. Editing these files by hand can break sync.\n` } } })).json();
+  if (!docs) docs = await make(GH.descDocs, 'settings and projects');
+  if (!files) files = await make(GH.descFiles, 'sound and font files');
+  return { token, login: me.login || '', docs: docs.id, files: files.id, url: docs.html_url || '' };
+}
+function ghStore(cfg) {
+  const tok = cfg.token;
+  const q = { docs: {}, files: {} };
+  const st = { etag: '', fetag: '', fcache: null, iv: 0, onDocs: null, onErr: null };
+  const fileText = async (f) => {
+    if (!f.truncated) return f.content;
+    const res = await fetch(f.raw_url, { cache: 'no-store' }).catch(() => null);
+    if (!res || !res.ok) throw syncErr('unavailable', 'Can’t read a big file from GitHub');
+    return res.text();
+  };
+  const ingest = async (g) => {
+    const out = [];
+    for (const [name, f] of Object.entries(g.files || {})) {
+      if (!name.endsWith('.json')) continue;
+      try { out.push([name.slice(0, -5), JSON.parse(await fileText(f))]); } catch (e) { /* not ours */ }
+    }
+    st.onDocs(out);
+  };
+  const poll = async () => {
+    const res = await ghApi(tok, 'GET', '/gists/' + cfg.docs, null, st.etag);
+    if (res.status === 304) return;
+    st.etag = res.headers.get('etag') || '';
+    await ingest(await res.json());
+  };
+  // save queued files in a few requests; a delete GitHub doesn't know about is dropped and the rest retried
+  const patch = async (gist, files) => {
+    const names = Object.keys(files);
+    let last = null, batch = {}, size = 0;
+    const take = async (res) => { last = { g: await res.json(), etag: res.headers.get('etag') || '' }; };
+    const send = async () => {
+      if (!Object.keys(batch).length) return;
+      const body = {};
+      for (const [n, c] of Object.entries(batch)) body[n] = c === null ? null : { content: c };
+      try { await take(await ghApi(tok, 'PATCH', '/gists/' + gist, { files: body })); }
+      catch (e) {
+        if (e.code !== 'gh_invalid' || !Object.values(batch).includes(null)) throw e;
+        for (const n of Object.keys(body)) if (body[n] === null) delete body[n];
+        if (Object.keys(body).length) await take(await ghApi(tok, 'PATCH', '/gists/' + gist, { files: body }));
+      }
+      batch = {}; size = 0;
+    };
+    for (const n of names) {
+      const c = files[n], len = c === null ? 0 : c.length;
+      if (size + len > GH.batch) await send();
+      batch[n] = c; size += len;
+    }
+    await send();
+    return last;
+  };
+  return {
+    kind: 'github', uid: 'gh:' + cfg.docs, canFiles: true, chunk: 250000, login: cfg.login, url: cfg.url,
+    listen(onDocs, onErr) {
+      st.onDocs = onDocs; st.onErr = onErr;
+      const tick = () => { if (document.visibilityState !== 'hidden') st.run(); };
+      st.run = () => { SY.chain = SY.chain.then(poll).catch((e) => st.onErr(e)); };
+      st.vis = () => { if (document.visibilityState === 'visible') st.run(); };
+      st.run();
+      st.iv = setInterval(tick, GH.poll);
+      document.addEventListener('visibilitychange', st.vis);
+      window.addEventListener('online', st.vis);
+    },
+    set(id, body) { q.docs[id + '.json'] = JSON.stringify(body); },
+    del(id) { q.docs[id + '.json'] = null; },
+    async upload(raw) {
+      const asset = newId('g'), b64 = bufToB64(raw), parts = Math.max(1, Math.ceil(b64.length / GH.part));
+      for (let i = 0; i < parts; i++) q.files[`b-${asset}-${i}.txt`] = b64.slice(i * GH.part, (i + 1) * GH.part);
+      return { asset, enc: 'gh', parts };
+    },
+    dropFile(r) { if (r && r.asset && r.parts) for (let i = 0; i < r.parts; i++) q.files[`b-${r.asset}-${i}.txt`] = null; },
+    async getFile(r) {
+      if (!st.fcache || !st.fcache[`b-${r.asset}-0.txt`]) {
+        const res = await ghApi(tok, 'GET', '/gists/' + cfg.files, null, st.fetag);
+        if (res.status !== 304) { st.fetag = res.headers.get('etag') || ''; st.fcache = (await res.json()).files || {}; }
+      }
+      const parts = [];
+      for (let i = 0; i < (r.parts || 1); i++) {
+        const f = st.fcache && st.fcache[`b-${r.asset}-${i}.txt`];
+        if (!f) throw syncErr('invalid_argument', 'A synced file is missing');
+        parts.push(await fileText(f));
+      }
+      return b64ToBuf(parts.join(''));
+    },
+    async flush() {
+      // files first, so a document never points at a file that isn't there yet
+      // (on a failure the queue is dropped: the ledger is rolled back, so the next pass queues it all again)
+      const files = q.files, docs = q.docs;
+      q.files = {}; q.docs = {};
+      if (Object.keys(files).length) { await patch(cfg.files, files); st.fcache = null; st.fetag = ''; }
+      if (Object.keys(docs).length) { const r = await patch(cfg.docs, docs); st.etag = r ? r.etag : ''; if (r) await ingest(r.g); }
+    },
+    endPass() { st.fcache = null; },                       // let big file contents go once a pass is done
+    async wipe() {
+      await ghApi(tok, 'DELETE', '/gists/' + cfg.docs).catch(() => {});
+      await ghApi(tok, 'DELETE', '/gists/' + cfg.files).catch(() => {});
+    },
+    stop() {
+      clearInterval(st.iv);
+      if (st.vis) { document.removeEventListener('visibilitychange', st.vis); window.removeEventListener('online', st.vis); }
+      st.onDocs = () => {}; st.onErr = () => {};
+    },
+  };
+}
+
 // ---------------------------------------------------------------- starting and stopping
-const syncLive = () => !!(SY.col && SY.ready && SY.cfg.on);
+const syncLive = () => !!(SY.st && SY.ready && SY.cfg.on);
+const syncWhere = () => (inClaude() ? 'claude' : 'github');
 function syncSoon(ms = 1500) {
-  if (!SY.col || !SY.cfg.on) return;
+  if (!SY.st || !SY.cfg.on) return;
+  const now = Date.now();
+  if (SY.st.kind === 'github' && ms >= 1500) {        // edits going to GitHub wait for a pause, but never more than 30 s
+    if (!SY.due) SY.due = now + 30000;
+    ms = Math.max(0, Math.min(6000, SY.due - now));
+  }
   clearTimeout(SY.timer);
-  SY.timer = setTimeout(syncRun, Math.max(ms, SY.backoff > Date.now() ? SY.backoff - Date.now() : 0));
+  SY.timer = setTimeout(() => { SY.due = 0; syncRun(); }, Math.max(ms, SY.backoff > now ? SY.backoff - now : 0));
 }
 function syncRun() {
   SY.chain = SY.chain.then(syncReconcile).catch((e) => syncTrouble(e));
@@ -7654,48 +7865,73 @@ async function syncBoot() {
   if (SY.cfg.on) await syncStart();
 }
 async function syncStart() {
-  if (!inClaude()) { SY.status = 'na'; syncUI(); return; }
-  if (SY.col) return;
+  if (SY.st) return;
+  const where = syncWhere();
+  if (where === 'github' && !SY.cfg.gh) { SY.status = 'na'; syncUI(); return; }
   SY.status = 'connecting'; syncUI();
-  const use = (n) => window.claude.use(n).catch(() => null);
-  const [db, user, assets] = await Promise.all([use('db'), use('user'), use('assets')]);
+  let st;
+  try { st = where === 'claude' ? await claudeStore() : ghStore(SY.cfg.gh); }
+  catch (e) { syncTrouble(e); return; }
   if (!SY.cfg.on) { SY.status = 'off'; syncUI(); return; }
-  const uid = db && user ? await user.id().catch(() => null) : null;
-  const canWrite = user ? await user.can('data.write').catch(() => null) : null;
-  if (!db || !uid || canWrite === false) { SY.status = 'view'; syncUI(); return; }
-  if (SY.cfg.uid !== uid) { SY.cfg.uid = uid; SY.cfg.L = {}; syncCfgSave(); }
-  SY.db = db; SY.user = user; SY.assets = assets;
-  SY.col = db.collection('data/users/' + uid);
+  if (SY.cfg.uid !== st.uid) { SY.cfg.uid = st.uid; SY.cfg.L = {}; syncCfgSave(); }
+  SY.st = st;
+  SY.chunkSize = st.chunk;
   SY.ready = false;
   clearTimeout(SY.wait);
-  SY.wait = setTimeout(() => { if (!SY.ready && SY.col) { SY.status = 'slow'; syncUI(); } }, 10000);
-  SY.unsub = SY.col.onSnapshot((snap) => {
-    if (snap.metadata && snap.metadata.fromCache && !SY.ready) return;   // wait for the store's own answer before acting
+  SY.wait = setTimeout(() => { if (!SY.ready && SY.st) { SY.status = 'slow'; syncUI(); } }, 10000);
+  st.listen((docs) => {
     clearTimeout(SY.wait);
     const first = !SY.ready;
     SY.ready = true;
     const remote = new Map(), chunks = new Map();
-    for (const d of snap.docs) {
-      const x = d.data();
-      if (!x) continue;
-      (d.id.startsWith('pc-') ? chunks : remote).set(d.id, x);
-    }
+    for (const [id, x] of docs) if (x && typeof x === 'object') (id.startsWith('pc-') ? chunks : remote).set(id, x);
     SY.remote = remote; SY.chunks = chunks;
+    if (SY.status === 'slow' || SY.status === 'connecting') { SY.status = 'ok'; SY.at = Date.now(); syncUI(); }
     syncSoon(first ? 50 : 250);
-  }, (e) => { syncStop(true); syncTrouble(e); });
+  }, (e) => syncTrouble(e));
 }
 function syncStop(keepStatus) {
   clearTimeout(SY.timer); clearTimeout(SY.wait);
-  if (SY.unsub) try { SY.unsub(); } catch (e) { /* already closed */ }
-  SY.unsub = null; SY.col = null; SY.ready = false;
-  if (!keepStatus) { SY.status = SY.cfg.on ? 'connecting' : 'off'; syncUI(); }
+  if (SY.st) SY.st.stop();
+  SY.st = null; SY.ready = false;
+  if (!keepStatus) { SY.status = SY.cfg.on ? (syncWhere() === 'github' && !SY.cfg.gh ? 'na' : 'connecting') : 'off'; syncUI(); }
 }
 function syncTrouble(e) {
   const code = e && e.code;
-  if (code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') { syncStop(true); SY.status = 'view'; }
-  else if (code === 'quota_exceeded') SY.status = 'full';
-  else if (code === 'resource_exhausted' || code === 'unavailable') { SY.backoff = Date.now() + 30000; SY.status = 'slow'; syncSoon(30000); }
+  if (code === 'view' || code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') { syncStop(true); SY.status = 'view'; }
+  else if (code === 'gh_auth' || code === 'gh_scope') { syncStop(true); SY.status = 'token'; SY.msg = e.message; }
+  else if (code === 'gh_missing') {                       // the gists were deleted on GitHub: find or make them again
+    syncStop(true);
+    const gh = SY.cfg.gh;
+    if (gh && !SY.relinking) {
+      SY.relinking = true;
+      ghLink(gh.token).then((c) => { SY.relinking = false; SY.cfg.gh = c; syncCfgSave(); syncStart(); }).catch((x) => { SY.relinking = false; syncTrouble(x); });
+    }
+    SY.status = 'connecting';
+  } else if (code === 'quota_exceeded') SY.status = 'full';
+  else if (code === 'resource_exhausted' || code === 'unavailable') { SY.backoff = e.until || Date.now() + 30000; SY.status = 'slow'; syncSoon(30000); }
   else { SY.status = 'error'; SY.msg = (e && e.message) || String(e); SY.backoff = Date.now() + 20000; syncSoon(20000); }
+  syncUI();
+}
+// link this device to GitHub with a pasted token
+async function syncLinkGitHub(token) {
+  token = String(token || '').trim();
+  if (!/^(ghp_|github_pat_|gho_)?[A-Za-z0-9_]{20,}$/.test(token)) throw new Error('That doesn’t look like a GitHub token. It usually starts with ghp_.');
+  const c = await ghLink(token).catch((e) => {
+    throw new Error(e.code === 'gh_auth' ? 'GitHub didn’t accept that token. Copy it again, all of it.' : e.code === 'gh_scope' ? 'That token can’t reach your gists. Make one with the gist box ticked.' : e.code === 'unavailable' ? 'Can’t reach GitHub. Check your connection.' : e.message);
+  });
+  syncStop(true);
+  SY.cfg.gh = c; SY.cfg.on = true;
+  syncCfgSave();
+  await syncStart();
+  return c;
+}
+function syncUnlinkGitHub() {
+  syncStop(true);
+  SY.cfg.gh = null; SY.cfg.uid = ''; SY.cfg.L = {};
+  syncCfgSave();
+  SY.remote = new Map(); SY.chunks = new Map();
+  SY.status = 'na';
   syncUI();
 }
 
@@ -7704,21 +7940,22 @@ async function syncReconcile() {
   if (!syncLive()) return;
   if (S.recording || ED.drag) { syncSoon(4000); return; }
   SY.status = 'busy'; syncUI();
-  const local = localItems(), L = SY.cfg.L;
+  const local = localItems(), L = SY.cfg.L, L0 = { ...L }, pushed = [];
   const fresh = !Object.keys(L).length;            // this device has never synced: what's in the cloud wins for settings
   const ids = new Set([...local.keys(), ...SY.remote.keys(), ...Object.keys(L)]);
   const got = { prefs: 0, p: 0, s: 0, f: 0, del: 0 };
   let trouble = null;
   for (const id of ids) {
     const kind = id === 'prefs' ? 'prefs' : id[0];
-    if (!['prefs', 'p', 's', 'f'].includes(kind)) continue;
+    if (!['prefs', 'p', 's', 'f'].includes(kind) || (kind !== 'prefs' && id[1] !== '-')) continue;
     if (!SY.cfg.files && (kind === 's' || kind === 'f')) continue;
     if (SY.skip.has(id)) continue;
     const r = SY.remote.get(id), l = local.get(id), g = L[id];
     const rSig = r ? (r.del ? 'DEL' : r.sig) : null;
     const lSig = l ? l.sig : g ? 'DEL' : null;
+    if (r && g && (+r.n || 0) < (+g.n || 0)) continue;            // a stale read: we've already seen newer
     if (rSig === lSig) {
-      if (r && (!g || g.v !== r.v || g.sig !== lSig)) L[id] = { sig: lSig, v: r.v };
+      if (r && (!g || g.v !== r.v || g.sig !== lSig)) L[id] = { sig: lSig, v: r.v, n: +r.n || 0 };
       continue;
     }
     const remoteChanged = !!r && (!g || r.v !== g.v);
@@ -7734,17 +7971,22 @@ async function syncReconcile() {
     if (!act) continue;
     try {
       if (act === 'pull') { if (await syncPull(id, kind, r, l)) got[r.del ? 'del' : kind]++; }
-      else await syncPush(id, kind, l, r);
+      else if (await syncPush(id, kind, l, r)) pushed.push(id);
     } catch (e) {
       const code = e && e.code;
       if (code === 'too_large' || code === 'unsupported_type' || code === 'invalid_argument' || code === 'invalid_request') SY.skip.set(id, code === 'too_large' ? 'too big to sync' : 'couldn’t be synced');
       else { trouble = e; break; }
     }
   }
+  if (!trouble) {
+    try { await SY.st.flush(); }
+    catch (e) { trouble = e; for (const id of pushed) { if (L0[id]) L[id] = L0[id]; else delete L[id]; } }   // not saved: try those again later
+  }
+  if (SY.st && SY.st.endPass) SY.st.endPass();
   syncCfgSave();
+  syncAfterPull(got);
   if (trouble) throw trouble;
   SY.status = 'ok'; SY.at = Date.now(); SY.msg = '';
-  syncAfterPull(got);
   syncUI();
 }
 function syncAfterPull(got) {
@@ -7768,43 +8010,42 @@ function syncAfterPull(got) {
 
 // ---------------------------------------------------------------- sending
 async function syncPush(id, kind, l, r) {
-  const v = newId('v'), mt = Date.now(), L = SY.cfg.L;
+  const L = SY.cfg.L, g = L[id];
+  const v = newId('v'), mt = Date.now(), n = Math.max(r ? +r.n || 0 : 0, g ? +g.n || 0 : 0) + 1;
   if (!l) {                                                        // deleted here: leave a marker so the others drop it too
-    await SY.col.doc(id).set({ k: kind, del: true, sig: 'DEL', v, mt });
-    if (r && r.asset && SY.assets) SY.assets.delete(r.asset).catch(() => {});
+    await SY.st.set(id, { k: kind, del: true, sig: 'DEL', v, mt, n });
+    SY.st.dropFile(r);
     if (kind === 'p') await syncDropChunks(id.slice(2), 0);
-    L[id] = { sig: 'DEL', v };
+    L[id] = { sig: 'DEL', v, n };
     return true;
   }
   let body;
-  if (kind === 'prefs') body = { k: kind, sig: l.sig, v, mt, json: JSON.stringify(S.prefs) };
+  if (kind === 'prefs') body = { k: kind, sig: l.sig, v, mt, n, json: JSON.stringify(S.prefs) };
   else if (kind === 'p') {
     const pid = id.slice(2), json = JSON.stringify(l.rec), cs = SY.chunkSize;
-    body = { k: kind, sig: l.sig, v, mt, name: String(l.rec.name || '').slice(0, 80) };
+    body = { k: kind, sig: l.sig, v, mt, n, name: String(l.rec.name || '').slice(0, 80) };
     if (json.length <= cs) body.json = json;
     else {
-      const n = Math.ceil(json.length / cs);
-      for (let i = 0; i < n; i++) await SY.col.doc(`pc-${pid}-${i}`).set({ v, s: json.slice(i * cs, (i + 1) * cs) });
-      body.chunks = n;
+      const parts = Math.ceil(json.length / cs);
+      for (let i = 0; i < parts; i++) await SY.st.set(`pc-${pid}-${i}`, { v, s: json.slice(i * cs, (i + 1) * cs) });
+      body.chunks = parts;
     }
   } else {
-    if (!SY.assets) return false;                                  // only people who can edit this Quaker can upload files
+    if (!SY.st.canFiles) return false;                             // only people who can edit this Quaker can upload files
     const f = l.rec;
-    let blob, enc = 'raw';
-    const mime = kind === 'f' ? fontMime(f.raw) : '';
-    if (mime && f.raw.byteLength <= FILE_MAX) blob = new Blob([f.raw], { type: mime });
-    else {
-      if (f.raw.byteLength * 4 / 3 > FILE_MAX) { SY.skip.set(id, 'over 15 MB, too big to sync'); return false; }
-      blob = new Blob([bufToB64(f.raw)], { type: 'text/plain' }); enc = 'b64';
+    const asIs = SY.st.kind === 'claude' && kind === 'f' && fontMime(f.raw) && f.raw.byteLength <= FILE_MAX;   // fonts go up untouched there
+    if (!asIs && f.raw.byteLength * 4 / 3 > FILE_MAX) {
+      SY.skip.set(id, 'over 15 MB, too big to sync');
+      return false;
     }
-    const up = await SY.assets.upload(blob, { type: blob.type });
+    const up = await SY.st.upload(f.raw, kind === 'f' ? fontMime(f.raw) : '');
     body = kind === 's'
-      ? { k: kind, sig: l.sig, v, mt, asset: up.id, enc, name: f.name, dur: +f.dur || 0, size: f.raw.byteLength }
-      : { k: kind, sig: l.sig, v, mt, asset: up.id, enc, file: f.file || '', family: f.family, weight: f.weight, wmax: f.wmax || 0, italic: !!f.italic, size: f.raw.byteLength, added: f.added || 0 };
-    if (r && r.asset && r.asset !== up.id) SY.assets.delete(r.asset).catch(() => {});
+      ? { k: kind, sig: l.sig, v, mt, n, ...up, name: f.name, dur: +f.dur || 0, size: f.raw.byteLength }
+      : { k: kind, sig: l.sig, v, mt, n, ...up, file: f.file || '', family: f.family, weight: f.weight, wmax: f.wmax || 0, italic: !!f.italic, size: f.raw.byteLength, added: f.added || 0 };
+    if (r && r.asset && r.asset !== up.asset) SY.st.dropFile(r);
   }
-  await SY.col.doc(id).set(body);
-  L[id] = { sig: l.sig, v };
+  await SY.st.set(id, body);
+  L[id] = { sig: l.sig, v, n };
   if (kind === 'p') await syncDropChunks(id.slice(2), body.chunks || 0);
   return true;
 }
@@ -7812,21 +8053,21 @@ async function syncDropChunks(pid, keep) {
   const pre = `pc-${pid}-`;
   for (const k of [...SY.chunks.keys()]) {
     if (!k.startsWith(pre) || +k.slice(pre.length) < keep) continue;
-    await SY.col.doc(k).delete().catch(() => {});
+    await SY.st.del(k);
     SY.chunks.delete(k);
   }
 }
 
 // ---------------------------------------------------------------- receiving
 async function syncPull(id, kind, r, l) {
-  const L = SY.cfg.L;
+  const L = SY.cfg.L, n = +r.n || 0;
   if (r.del) {
     if (l) {
-      if (kind === 'p') { L[id] = { sig: 'DEL', v: r.v }; await projDelete(id.slice(2)); }
+      if (kind === 'p') { L[id] = { sig: 'DEL', v: r.v, n }; await projDelete(id.slice(2)); }
       else if (kind === 's') { await removeSoundFile(id.slice(2)); soundSlotsDrop(id.slice(2)); }
       else if (kind === 'f') await removeFontFace(id.slice(2));
     }
-    L[id] = { sig: 'DEL', v: r.v };
+    L[id] = { sig: 'DEL', v: r.v, n };
     return !!l;
   }
   if (kind === 'prefs') {
@@ -7834,7 +8075,7 @@ async function syncPull(id, kind, r, l) {
     if (!np || typeof np !== 'object') return false;
     replacePrefs(np);
     SY.cfg.pa = +r.mt || Date.now();
-    L[id] = { sig: syncSig(S.prefs), v: r.v };
+    L[id] = { sig: syncSig(S.prefs), v: r.v, n };
     return true;
   }
   if (kind === 'p') {
@@ -7843,7 +8084,7 @@ async function syncPull(id, kind, r, l) {
       const parts = [];
       for (let i = 0; i < r.chunks; i++) {
         const c = SY.chunks.get(`pc-${id.slice(2)}-${i}`);
-        if (!c || c.v !== r.v) return false;                     // not all here yet: the next snapshot finishes it
+        if (!c || c.v !== r.v) return false;                     // not all here yet: the next read finishes it
         parts.push(c.s);
       }
       json = parts.join('');
@@ -7857,13 +8098,11 @@ async function syncPull(id, kind, r, l) {
     await IDB.put(rec, 'projects');
     projUpsert(rec);
     if (open) { projLoad(rec); toast(`${rec.name} was updated on your other device.`, 2400); }
-    L[id] = { sig: projSyncSig(rec), v: r.v };
+    L[id] = { sig: projSyncSig(rec), v: r.v, n };
     return true;
   }
   // files
-  const res = await fetch(blobUrl(r.asset));
-  if (!res.ok) throw Object.assign(new Error('A synced file is missing'), { code: 'invalid_argument' });
-  const raw = r.enc === 'b64' ? b64ToBuf(await res.text()) : await res.arrayBuffer();
+  const raw = await SY.st.getFile(r);
   const fid = id.slice(2);
   if (kind === 's') {
     const rec = { id: fid, name: String(r.name || 'Sound').slice(0, 40), raw, dur: +r.dur || 0 };
@@ -7872,7 +8111,7 @@ async function syncPull(id, kind, r, l) {
     AU.files.push(rec);
     await IDB.put(rec);
     if (AU.ctx) AU.decode(rec);
-    L[id] = { sig: 's' + raw.byteLength + ':' + rec.name, v: r.v };
+    L[id] = { sig: soundSig(rec), v: r.v, n };
     return true;
   }
   const rec = { id: fid, file: String(r.file || '').slice(0, 80), raw, size: raw.byteLength, added: +r.added || Date.now(),
@@ -7881,7 +8120,7 @@ async function syncPull(id, kind, r, l) {
   FONTS.files.push(rec);
   await IDB.put(rec, 'fonts');
   regFamily(famKeyOf(rec.family));
-  L[id] = { sig: 'f' + raw.byteLength + ':' + rec.family + ':' + rec.weight + ':' + (rec.italic ? 1 : 0), v: r.v };
+  L[id] = { sig: fontSig(rec), v: r.v, n };
   return true;
 }
 // a removed sound file can't stay picked for an alert
@@ -7907,17 +8146,16 @@ function replacePrefs(np) {
 
 // ---------------------------------------------------------------- cloud copy housekeeping
 async function syncWipe() {
-  if (!SY.col) return false;
-  const col = SY.col;
-  for (const [id, x] of SY.remote) {
-    if (x && x.asset && SY.assets) await SY.assets.delete(x.asset).catch(() => {});
-    await col.doc(id).delete().catch(() => {});
-  }
-  for (const id of SY.chunks.keys()) await col.doc(id).delete().catch(() => {});
-  SY.cfg.on = false; SY.cfg.L = {};
+  if (!SY.st) return false;
+  const st = SY.st;
+  await st.wipe(new Map([...SY.remote, ...SY.chunks]));
+  syncStop(true);
+  SY.cfg.L = {}; SY.cfg.uid = '';
+  if (st.kind === 'github') SY.cfg.gh = null; else SY.cfg.on = false;
   syncCfgSave();
-  syncStop();
   SY.remote = new Map(); SY.chunks = new Map();
+  SY.status = st.kind === 'github' ? 'na' : 'off';
+  syncUI();
   return true;
 }
 
@@ -8011,22 +8249,23 @@ async function importBackup(o) {
 
 // ---------------------------------------------------------------- settings tab
 function syncStatusText() {
-  const c = SY.cfg;
+  const c = SY.cfg, gh = syncWhere() === 'github';
   const counts = () => {
     let p = 0, s = 0, f = 0;
     for (const [id, x] of SY.remote) if (!x.del) { if (id.startsWith('p-')) p++; else if (id.startsWith('s-')) s++; else if (id.startsWith('f-')) f++; }
     const b = [`${p} project${p === 1 ? '' : 's'}`];
     if (c.files) b.push(`${s} sound${s === 1 ? '' : 's'}`, `${f} font${f === 1 ? '' : 's'}`);
-    return ' Your cloud copy has ' + b.join(', ') + '.';
+    return (gh ? ' Your GitHub copy has ' : ' Your cloud copy has ') + b.join(', ') + '.';
   };
   switch (SY.status) {
-    case 'na': return ['off', 'Automatic sync works when Quaker is open in Claude. Here, move your stuff with a backup file.'];
+    case 'na': return ['off', gh ? 'Not linked yet. Link GitHub below and your stuff syncs by itself.' : 'Sync isn’t set up here.'];
     case 'off': return ['off', 'Sync is off on this device.'];
     case 'connecting': return ['busy', 'Connecting…'];
     case 'busy': return ['busy', 'Syncing…'];
     case 'ok': return ['ok', `Synced ${agoText(SY.at)}.` + counts()];
-    case 'slow': return ['warn', 'Can’t reach sync right now. It keeps trying and catches up when it can.'];
+    case 'slow': return ['warn', `Can’t reach ${gh ? 'GitHub' : 'sync'} right now. It keeps trying and catches up when it can.`];
     case 'view': return ['warn', 'This view can’t sync, because you’re signed out or only have view access. A backup file still works.'];
+    case 'token': return ['warn', (SY.msg || 'GitHub stopped accepting the token') + '. It may have expired. Unlink, then paste a new one.'];
     case 'full': return ['warn', 'The cloud copy is full. Remove some sound or font files, or turn off file sync.'];
     default: return ['warn', 'Sync hit a snag' + (SY.msg ? `: ${SY.msg}` : '') + '. It’ll try again.'];
   }
@@ -8051,32 +8290,53 @@ function buildSyncSettings() {
   const root = $('#setSync');
   if (!root) return;
   root.textContent = '';
-  const c = SY.cfg, here = inClaude();
+  const c = SY.cfg, where = syncWhere(), linked = where === 'claude' || !!c.gh;
   const status = h('div', { id: 'syncStatus', class: 'sync-status', role: 'status', 'aria-live': 'polite' }, h('span', { class: 'sync-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-t' }));
   let wipeArm = 0;
-  const wipe = h('button', { type: 'button', class: 'btn sm danger', text: 'Delete the cloud copy', onclick: async () => {
-    if (Date.now() - wipeArm > 4000) { wipeArm = Date.now(); wipe.textContent = 'Tap again to delete it'; setTimeout(() => { wipe.textContent = 'Delete the cloud copy'; }, 4000); return; }
+  const wipeLabel = where === 'github' ? 'Delete the GitHub copy' : 'Delete the cloud copy';
+  const wipe = h('button', { type: 'button', class: 'btn sm danger', text: wipeLabel, onclick: async () => {
+    if (Date.now() - wipeArm > 4000) { wipeArm = Date.now(); wipe.textContent = 'Tap again to delete it'; setTimeout(() => { wipe.textContent = wipeLabel; }, 4000); return; }
     wipe.disabled = true;
     await syncWipe();
-    toast('Deleted the cloud copy and turned sync off here. Everything on this device stays.', 3000);
+    toast(where === 'github' ? 'Deleted the sync gists and unlinked this device. Everything on this device stays.' : 'Deleted the cloud copy and turned sync off here. Everything on this device stays.', 3200);
     buildSyncSettings();
   } });
-  const syncBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: 'Automatic sync' }),
-    status,
-    h('p', { class: 'note', text: 'Your settings, the projects you’ve worked on, and your imported sounds and fonts follow you to any device where you open this Quaker in Claude, signed in as you. Untouched preloaded quakes stay put. When the same thing changed on two devices, the newer change wins, and an edit always beats a delete.' }));
-  if (here) {
+  const what = 'Your settings, the projects you’ve worked on, and your imported sounds and fonts follow you to your other devices. Untouched preloaded quakes stay put. When the same thing changed on two devices, the newer change wins, and an edit always beats a delete.';
+  const syncBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: where === 'github' ? 'Sync through GitHub' : 'Automatic sync' }), status);
+  if (where === 'github' && !c.gh) {
+    // the one-time setup on each device
+    const tok = h('input', { type: 'password', id: 'ghToken', placeholder: 'ghp_…', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'GitHub token' });
+    const err = h('p', { class: 'note sync-err', role: 'alert' });
+    const go = h('button', { type: 'button', class: 'btn', text: 'Link', onclick: async () => {
+      go.disabled = true; err.textContent = ''; go.textContent = 'Linking…';
+      try { const g = await syncLinkGitHub(tok.value); toast(`Linked to GitHub as ${g.login}. Syncing now.`, 2600); buildSyncSettings(); }
+      catch (e) { err.textContent = e.message; go.disabled = false; go.textContent = 'Link'; }
+    } });
+    tok.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
+    syncBox.append(
+      h('p', { class: 'note', text: what + ' Quaker keeps them in two secret gists on your GitHub account.' }),
+      h('ol', { class: 'sync-steps' },
+        h('li', {}, h('a', { href: GH.tokenUrl, target: '_blank', rel: 'noopener', text: 'Make a token on GitHub' }), h('span', { text: '. Leave just the “gist” box ticked, and pick No expiration so you never have to redo this. Copy the token it shows you.' })),
+        h('li', {}, h('span', { text: 'Paste it here and press Link:' }), h('div', { class: 'row sync-tok' }, tok, go)),
+        h('li', { text: 'On your other devices, paste the same token. They find the same gists by themselves.' })),
+      err,
+      h('p', { class: 'note', text: 'The token can only touch your gists, nothing else on your account, and it stays in this browser. Anyone with the token could read or change your gists, so don’t share it.' }));
+  } else {
+    syncBox.append(h('p', { class: 'note', text: where === 'github' ? `Linked as ${c.gh.login || 'you'}. It checks for changes every 30 seconds and whenever you come back to this tab. ` + what : what.replace('to your other devices', 'to any device where you open this Quaker in Claude, signed in as you') }));
     syncBox.append(h('div', { class: 'list' },
-      cChk(() => c.on, async (v) => { c.on = v; syncCfgSave(); if (v) { await syncStart(); syncSoon(100); } else syncStop(); buildSyncSettings(); }, 'Sync automatically between my devices'),
+      cChk(() => c.on, async (v) => { c.on = v; syncCfgSave(); if (v) { await syncStart(); syncSoon(100); } else { syncStop(); } buildSyncSettings(); }, 'Sync automatically between my devices'),
       cChk(() => c.files, (v) => { c.files = v; syncCfgSave(); syncSoon(200); syncUI(); }, 'Include my sound and font files', 'Files over about 15 MB stay on the device they’re on.')),
     h('ul', { id: 'syncSkips', class: 'note sync-skips', hidden: true }),
-    h('div', { class: 'row' },
-      c.on ? btn('Sync now', () => { if (!SY.col) syncStart(); syncSoon(0); }, 'btn sm') : null,
-      SY.col && SY.ready ? wipe : null));
+    h('div', { class: 'row sync-btns' },
+      c.on ? btn('Sync now', () => { if (!SY.st) syncStart(); syncSoon(0); }, 'btn sm') : null,
+      where === 'github' && c.gh.url ? h('a', { class: 'btn sm', href: c.gh.url, target: '_blank', rel: 'noopener', text: 'Open on GitHub' }) : null,
+      where === 'github' ? btn('Unlink this device', () => { syncUnlinkGitHub(); toast('Unlinked. Your stuff stays here and on GitHub.', 2400); buildSyncSettings(); }, 'btn sm ghost') : null,
+      SY.st && linked && (where === 'github' || SY.ready) ? wipe : null));
   }
   const bakIn = h('input', { type: 'file', accept: '.json,application/json', class: 'sr', id: 'bakUp' });
   bakIn.addEventListener('change', async () => { const f = bakIn.files && bakIn.files[0]; bakIn.value = ''; if (f) { await importBackupFile(f); } });
   const bakBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: 'Backup file' }),
-    h('p', { class: 'note', text: 'One file with everything. Load it on another device or keep it somewhere safe. Works on the website version too. Loading one keeps whichever copy of each project is newer, adds sounds and fonts you don’t have, and switches to the file’s settings.' }),
+    h('p', { class: 'note', text: 'One file with everything, for keeping somewhere safe or moving by hand. Loading one keeps whichever copy of each project is newer, adds sounds and fonts you don’t have, and switches to the file’s settings.' }),
     h('div', { class: 'list' }, cChk(() => c.bakFiles, (v) => { c.bakFiles = v; syncCfgSave(); }, 'Include sound and font files', 'Makes the file bigger.')),
     h('div', { class: 'row' },
       btn('Save a backup file…', () => exportBackup(c.bakFiles), 'btn'),
@@ -9899,7 +10159,7 @@ async function boot() {
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
       previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop,
-      SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile },
+      SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile, syncLinkGitHub, syncUnlinkGitHub, GH },
   };
 }
 boot();
