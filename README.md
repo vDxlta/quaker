@@ -10,6 +10,7 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - Intro screen: a title card over a blurred map that clears to reveal the graphics before the quake starts
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
 - Video recording, frame pictures, share codes and project files
+- Your stuff on every device: settings, projects, sounds and fonts sync automatically through your Claude account when Quaker is open as a Claude artifact, and a backup file moves everything anywhere else, this site included
 - Custom sounds for every alert, a sound per forecast shindo (so the EEW can sound different once it's a warning), and a different sound for each shindo level as the measured shaking climbs
 - Custom fonts for the on-screen graphics: pick Google Fonts, a font installed on your computer, or import your own TTF, OTF, WOFF or WOFF2 files, separately for Japanese text, English text and numbers, each with its own size
 

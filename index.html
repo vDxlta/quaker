@@ -313,6 +313,14 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .f.wide { grid-template-columns: 1fr; }
 .list { display: flex; flex-direction: column; gap: 6px; }
 .li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; background: var(--panel-3); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; }
+.sync-status { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); font-size: 14px; line-height: 1.45; }
+.sync-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+.sync-status.ok .sync-dot { background: #4CC38A; }
+.sync-status.busy .sync-dot { background: #5AA9FF; animation: syncPulse 1s ease-in-out infinite; }
+.sync-status.warn .sync-dot { background: #F2B53A; }
+@keyframes syncPulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .sync-status.busy .sync-dot { animation: none; } }
+.sync-skips { margin: 0; padding-left: 18px; }
 .font-roles { gap: 10px; }
 .font-role { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
 .font-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
@@ -758,6 +766,7 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
       <button role="tab" type="button" data-tab="cam" aria-selected="false">Camera</button>
       <button role="tab" type="button" data-tab="sound" aria-selected="false">Sounds</button>
       <button role="tab" type="button" data-tab="rec" aria-selected="false">Recording</button>
+      <button role="tab" type="button" data-tab="sync" aria-selected="false">Sync</button>
     </div>
     <div class="dlg-body" data-pane="display" id="setDisplay"></div>
     <div class="dlg-body" data-pane="fonts" id="setFonts" hidden></div>
@@ -765,6 +774,7 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
     <div class="dlg-body" data-pane="cam" id="setCam" hidden></div>
     <div class="dlg-body" data-pane="sound" id="setSound" hidden></div>
     <div class="dlg-body" data-pane="rec" id="setRec" hidden></div>
+    <div class="dlg-body" data-pane="sync" id="setSync" hidden></div>
   </div>
 </dialog>
 
@@ -5456,12 +5466,14 @@ async function addSoundFile(file) {
   }
   AU.files.push(rec);
   const ok = await IDB.put(rec);
+  syncSoon();
   return { id, stored: !!ok };
 }
 async function removeSoundFile(id) {
   AU.files = AU.files.filter((f) => f.id !== id);
   AU.buffers.delete(id);
   await IDB.del(id);
+  syncSoon();
 }
 
 // ============================================================== Quaker v2 · stage fonts
@@ -5625,6 +5637,7 @@ async function addFontFile(file) {
   regFamily(key);
   const ok = await IDB.put(rec, 'fonts');
   fontsSig = '';
+  syncSoon();
   return { key, family: rec.family, face: faceLabel(rec), stored: !!ok, replaced: !!dup };
 }
 async function removeFontFamily(key) {
@@ -5635,6 +5648,7 @@ async function removeFontFamily(key) {
   const F = S.prefs.fonts;
   for (const [r] of FONT_ROLES) if (F[r] === 'f:' + key) F[r] = '';
   fontsSig = '';
+  syncSoon();
 }
 async function removeFontFace(id) {
   const f = FONTS.files.find((x) => x.id === id);
@@ -5643,6 +5657,7 @@ async function removeFontFace(id) {
   await IDB.del(id, 'fonts');
   regFamily(famKeyOf(f.family));
   fontsSig = '';
+  syncSoon();
 }
 
 // ---------------------------------------------------------------- Google Fonts
@@ -7557,6 +7572,525 @@ function edInit() {
   }, { passive: false });
 }
 
+// ============================================================== Quaker v2 · your stuff on every device
+// Two ways across: automatic sync through your Claude account (when Quaker is open as a Claude artifact), and a
+// backup file that works anywhere. What travels: settings, projects you've worked on (untouched preloaded quakes
+// stay put), imported sounds and imported fonts.
+//
+// Sync keeps one document per thing under your private data/users/<you> path, plus the sound and font files as
+// artifact assets. Each device remembers the version of every document it last agreed with (the ledger), so it can
+// tell "changed over there" from "changed here". When both changed, the newer edit wins, and an edit always beats
+// a deletion so nothing you touched disappears.
+const SY = {
+  cfg: { on: true, files: true, bakFiles: true, uid: '', pa: 0, L: {} },
+  db: null, assets: null, user: null, col: null, unsub: null,
+  status: 'off', msg: '', at: 0, ready: false, wait: 0, timer: 0, chain: Promise.resolve(), backoff: 0,
+  remote: new Map(), chunks: new Map(), skip: new Map(), sigs: new WeakMap(),
+  chunkSize: 60000,
+};
+const FILE_MAX = 20 * 1048576;
+const okId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{2,48}$/.test(id);
+const blobUrl = (id) => '/_blob/' + id;
+
+function syncCfgLoad() {
+  const c = loadJSON('quaker.v2.sync');
+  if (c && typeof c === 'object') {
+    SY.cfg = { on: c.on !== false, files: c.files !== false, bakFiles: c.bakFiles !== false, uid: String(c.uid || ''), pa: +c.pa || 0, L: c.L && typeof c.L === 'object' ? c.L : {} };
+  }
+}
+function syncCfgSave() { try { localStorage.setItem('quaker.v2.sync', JSON.stringify(SY.cfg)); } catch (e) { /* storage off */ } }
+function syncTouchPrefs() { SY.cfg.pa = Date.now(); syncSoon(); }
+
+// ---------------------------------------------------------------- bytes
+function bufToB64(buf) {
+  const u = new Uint8Array(buf);
+  const parts = [];
+  for (let i = 0; i < u.length; i += 0x8000) parts.push(String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)));
+  return btoa(parts.join(''));
+}
+function b64ToBuf(b64) {
+  const s = atob(String(b64).replace(/\s+/g, ''));
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u.buffer;
+}
+function fontMime(raw) {
+  const t = raw.byteLength >= 4 ? new DataView(raw).getUint32(0) : 0;
+  return t === 0x774F4632 ? 'font/woff2' : t === 0x774F4646 ? 'font/woff' : t === 0x4F54544F ? 'font/otf' : t === 0x00010000 || t === 0x74727565 ? 'font/ttf' : '';
+}
+
+// ---------------------------------------------------------------- what this device has
+const syncSig = (o) => { const s = JSON.stringify(o); return strHash(s).toString(36) + '.' + s.length.toString(36); };
+const projSyncSig = (p) => syncSig([p.name, p.mode, p.easy, p.adv, p.src]);
+function localItems() {
+  const m = new Map();
+  m.set('prefs', { kind: 'prefs', sig: syncSig(S.prefs), t: SY.cfg.pa || 0 });
+  for (const p of PJ.list) {
+    if (!p || !okId(p.id) || p.pristine) continue;   // untouched preloaded quakes don't travel
+    let sig = SY.sigs.get(p);
+    if (!sig) { sig = projSyncSig(p); SY.sigs.set(p, sig); }
+    m.set('p-' + p.id, { kind: 'p', sig, t: Math.max(+p.updated || 0, +p.created || 0), rec: p });
+  }
+  if (SY.cfg.files) {
+    for (const f of AU.files) if (okId(f.id) && f.raw) m.set('s-' + f.id, { kind: 's', sig: 's' + f.raw.byteLength + ':' + f.name, t: 0, rec: f });
+    for (const f of FONTS.files) if (okId(f.id) && f.raw) m.set('f-' + f.id, { kind: 'f', sig: 'f' + f.raw.byteLength + ':' + f.family + ':' + f.weight + ':' + (f.italic ? 1 : 0), t: f.added || 0, rec: f });
+  }
+  return m;
+}
+
+// ---------------------------------------------------------------- starting and stopping
+const syncLive = () => !!(SY.col && SY.ready && SY.cfg.on);
+function syncSoon(ms = 1500) {
+  if (!SY.col || !SY.cfg.on) return;
+  clearTimeout(SY.timer);
+  SY.timer = setTimeout(syncRun, Math.max(ms, SY.backoff > Date.now() ? SY.backoff - Date.now() : 0));
+}
+function syncRun() {
+  SY.chain = SY.chain.then(syncReconcile).catch((e) => syncTrouble(e));
+  return SY.chain;
+}
+async function syncBoot() {
+  syncUI();
+  if (SY.cfg.on) await syncStart();
+}
+async function syncStart() {
+  if (!inClaude()) { SY.status = 'na'; syncUI(); return; }
+  if (SY.col) return;
+  SY.status = 'connecting'; syncUI();
+  const use = (n) => window.claude.use(n).catch(() => null);
+  const [db, user, assets] = await Promise.all([use('db'), use('user'), use('assets')]);
+  if (!SY.cfg.on) { SY.status = 'off'; syncUI(); return; }
+  const uid = db && user ? await user.id().catch(() => null) : null;
+  const canWrite = user ? await user.can('data.write').catch(() => null) : null;
+  if (!db || !uid || canWrite === false) { SY.status = 'view'; syncUI(); return; }
+  if (SY.cfg.uid !== uid) { SY.cfg.uid = uid; SY.cfg.L = {}; syncCfgSave(); }
+  SY.db = db; SY.user = user; SY.assets = assets;
+  SY.col = db.collection('data/users/' + uid);
+  SY.ready = false;
+  clearTimeout(SY.wait);
+  SY.wait = setTimeout(() => { if (!SY.ready && SY.col) { SY.status = 'slow'; syncUI(); } }, 10000);
+  SY.unsub = SY.col.onSnapshot((snap) => {
+    if (snap.metadata && snap.metadata.fromCache && !SY.ready) return;   // wait for the store's own answer before acting
+    clearTimeout(SY.wait);
+    const first = !SY.ready;
+    SY.ready = true;
+    const remote = new Map(), chunks = new Map();
+    for (const d of snap.docs) {
+      const x = d.data();
+      if (!x) continue;
+      (d.id.startsWith('pc-') ? chunks : remote).set(d.id, x);
+    }
+    SY.remote = remote; SY.chunks = chunks;
+    syncSoon(first ? 50 : 250);
+  }, (e) => { syncStop(true); syncTrouble(e); });
+}
+function syncStop(keepStatus) {
+  clearTimeout(SY.timer); clearTimeout(SY.wait);
+  if (SY.unsub) try { SY.unsub(); } catch (e) { /* already closed */ }
+  SY.unsub = null; SY.col = null; SY.ready = false;
+  if (!keepStatus) { SY.status = SY.cfg.on ? 'connecting' : 'off'; syncUI(); }
+}
+function syncTrouble(e) {
+  const code = e && e.code;
+  if (code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') { syncStop(true); SY.status = 'view'; }
+  else if (code === 'quota_exceeded') SY.status = 'full';
+  else if (code === 'resource_exhausted' || code === 'unavailable') { SY.backoff = Date.now() + 30000; SY.status = 'slow'; syncSoon(30000); }
+  else { SY.status = 'error'; SY.msg = (e && e.message) || String(e); SY.backoff = Date.now() + 20000; syncSoon(20000); }
+  syncUI();
+}
+
+// ---------------------------------------------------------------- the reconcile pass
+async function syncReconcile() {
+  if (!syncLive()) return;
+  if (S.recording || ED.drag) { syncSoon(4000); return; }
+  SY.status = 'busy'; syncUI();
+  const local = localItems(), L = SY.cfg.L;
+  const fresh = !Object.keys(L).length;            // this device has never synced: what's in the cloud wins for settings
+  const ids = new Set([...local.keys(), ...SY.remote.keys(), ...Object.keys(L)]);
+  const got = { prefs: 0, p: 0, s: 0, f: 0, del: 0 };
+  let trouble = null;
+  for (const id of ids) {
+    const kind = id === 'prefs' ? 'prefs' : id[0];
+    if (!['prefs', 'p', 's', 'f'].includes(kind)) continue;
+    if (!SY.cfg.files && (kind === 's' || kind === 'f')) continue;
+    if (SY.skip.has(id)) continue;
+    const r = SY.remote.get(id), l = local.get(id), g = L[id];
+    const rSig = r ? (r.del ? 'DEL' : r.sig) : null;
+    const lSig = l ? l.sig : g ? 'DEL' : null;
+    if (rSig === lSig) {
+      if (r && (!g || g.v !== r.v || g.sig !== lSig)) L[id] = { sig: lSig, v: r.v };
+      continue;
+    }
+    const remoteChanged = !!r && (!g || r.v !== g.v);
+    const localChanged = lSig !== (g ? g.sig : null);
+    let act = null;
+    if (remoteChanged && localChanged) {
+      if (!l) act = 'pull';                           // gone here, edited there: bring it back
+      else if (rSig === 'DEL') act = 'push';          // edited here, gone there: keep it
+      else if (kind === 'prefs' && fresh) act = 'pull';
+      else act = (l.t || 0) > (+r.mt || 0) ? 'push' : 'pull';
+    } else if (remoteChanged) act = 'pull';
+    else if (localChanged) act = 'push';
+    if (!act) continue;
+    try {
+      if (act === 'pull') { if (await syncPull(id, kind, r, l)) got[r.del ? 'del' : kind]++; }
+      else await syncPush(id, kind, l, r);
+    } catch (e) {
+      const code = e && e.code;
+      if (code === 'too_large' || code === 'unsupported_type' || code === 'invalid_argument' || code === 'invalid_request') SY.skip.set(id, code === 'too_large' ? 'too big to sync' : 'couldn’t be synced');
+      else { trouble = e; break; }
+    }
+  }
+  syncCfgSave();
+  if (trouble) throw trouble;
+  SY.status = 'ok'; SY.at = Date.now(); SY.msg = '';
+  syncAfterPull(got);
+  syncUI();
+}
+function syncAfterPull(got) {
+  const n = got.prefs + got.p + got.s + got.f + got.del;
+  if (!n) return;
+  if (got.p || got.del) { if ($('#dlgLibrary') && $('#dlgLibrary').open) renderProjects(); projChipUI(); }
+  if (got.f || got.del) { fontsSig = ''; applyFonts(); }
+  const dlg = $('#dlgSettings');
+  if (dlg && dlg.open) {
+    const tab = $('#setTabs [aria-selected=true]');
+    buildSettings();
+    if (tab) setShow(tab.dataset.tab);
+  }
+  const bits = [];
+  if (got.p) bits.push(got.p === 1 ? '1 project' : got.p + ' projects');
+  if (got.s) bits.push(got.s === 1 ? '1 sound' : got.s + ' sounds');
+  if (got.f) bits.push(got.f === 1 ? '1 font' : got.f + ' fonts');
+  if (got.prefs) bits.push('your settings');
+  if (bits.length) toast('Synced from your other device: ' + (bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0]) + '.', 2600);
+}
+
+// ---------------------------------------------------------------- sending
+async function syncPush(id, kind, l, r) {
+  const v = newId('v'), mt = Date.now(), L = SY.cfg.L;
+  if (!l) {                                                        // deleted here: leave a marker so the others drop it too
+    await SY.col.doc(id).set({ k: kind, del: true, sig: 'DEL', v, mt });
+    if (r && r.asset && SY.assets) SY.assets.delete(r.asset).catch(() => {});
+    if (kind === 'p') await syncDropChunks(id.slice(2), 0);
+    L[id] = { sig: 'DEL', v };
+    return true;
+  }
+  let body;
+  if (kind === 'prefs') body = { k: kind, sig: l.sig, v, mt, json: JSON.stringify(S.prefs) };
+  else if (kind === 'p') {
+    const pid = id.slice(2), json = JSON.stringify(l.rec), cs = SY.chunkSize;
+    body = { k: kind, sig: l.sig, v, mt, name: String(l.rec.name || '').slice(0, 80) };
+    if (json.length <= cs) body.json = json;
+    else {
+      const n = Math.ceil(json.length / cs);
+      for (let i = 0; i < n; i++) await SY.col.doc(`pc-${pid}-${i}`).set({ v, s: json.slice(i * cs, (i + 1) * cs) });
+      body.chunks = n;
+    }
+  } else {
+    if (!SY.assets) return false;                                  // only people who can edit this Quaker can upload files
+    const f = l.rec;
+    let blob, enc = 'raw';
+    const mime = kind === 'f' ? fontMime(f.raw) : '';
+    if (mime && f.raw.byteLength <= FILE_MAX) blob = new Blob([f.raw], { type: mime });
+    else {
+      if (f.raw.byteLength * 4 / 3 > FILE_MAX) { SY.skip.set(id, 'over 15 MB, too big to sync'); return false; }
+      blob = new Blob([bufToB64(f.raw)], { type: 'text/plain' }); enc = 'b64';
+    }
+    const up = await SY.assets.upload(blob, { type: blob.type });
+    body = kind === 's'
+      ? { k: kind, sig: l.sig, v, mt, asset: up.id, enc, name: f.name, dur: +f.dur || 0, size: f.raw.byteLength }
+      : { k: kind, sig: l.sig, v, mt, asset: up.id, enc, file: f.file || '', family: f.family, weight: f.weight, wmax: f.wmax || 0, italic: !!f.italic, size: f.raw.byteLength, added: f.added || 0 };
+    if (r && r.asset && r.asset !== up.id) SY.assets.delete(r.asset).catch(() => {});
+  }
+  await SY.col.doc(id).set(body);
+  L[id] = { sig: l.sig, v };
+  if (kind === 'p') await syncDropChunks(id.slice(2), body.chunks || 0);
+  return true;
+}
+async function syncDropChunks(pid, keep) {
+  const pre = `pc-${pid}-`;
+  for (const k of [...SY.chunks.keys()]) {
+    if (!k.startsWith(pre) || +k.slice(pre.length) < keep) continue;
+    await SY.col.doc(k).delete().catch(() => {});
+    SY.chunks.delete(k);
+  }
+}
+
+// ---------------------------------------------------------------- receiving
+async function syncPull(id, kind, r, l) {
+  const L = SY.cfg.L;
+  if (r.del) {
+    if (l) {
+      if (kind === 'p') { L[id] = { sig: 'DEL', v: r.v }; await projDelete(id.slice(2)); }
+      else if (kind === 's') { await removeSoundFile(id.slice(2)); soundSlotsDrop(id.slice(2)); }
+      else if (kind === 'f') await removeFontFace(id.slice(2));
+    }
+    L[id] = { sig: 'DEL', v: r.v };
+    return !!l;
+  }
+  if (kind === 'prefs') {
+    const np = JSON.parse(r.json);
+    if (!np || typeof np !== 'object') return false;
+    replacePrefs(np);
+    SY.cfg.pa = +r.mt || Date.now();
+    L[id] = { sig: syncSig(S.prefs), v: r.v };
+    return true;
+  }
+  if (kind === 'p') {
+    let json = r.json;
+    if (!json && r.chunks) {
+      const parts = [];
+      for (let i = 0; i < r.chunks; i++) {
+        const c = SY.chunks.get(`pc-${id.slice(2)}-${i}`);
+        if (!c || c.v !== r.v) return false;                     // not all here yet: the next snapshot finishes it
+        parts.push(c.s);
+      }
+      json = parts.join('');
+    }
+    const rec = JSON.parse(json);
+    if (!rec || rec.id !== id.slice(2)) return false;
+    rec.pristine = false;
+    if (!rec.easy) rec.easy = defaultEasy();
+    const open = S.proj && S.proj.id === rec.id;
+    if (open) rec.view = { ...R.view };                           // keep where this screen is looking
+    await IDB.put(rec, 'projects');
+    projUpsert(rec);
+    if (open) { projLoad(rec); toast(`${rec.name} was updated on your other device.`, 2400); }
+    L[id] = { sig: projSyncSig(rec), v: r.v };
+    return true;
+  }
+  // files
+  const res = await fetch(blobUrl(r.asset));
+  if (!res.ok) throw Object.assign(new Error('A synced file is missing'), { code: 'invalid_argument' });
+  const raw = r.enc === 'b64' ? b64ToBuf(await res.text()) : await res.arrayBuffer();
+  const fid = id.slice(2);
+  if (kind === 's') {
+    const rec = { id: fid, name: String(r.name || 'Sound').slice(0, 40), raw, dur: +r.dur || 0 };
+    AU.files = AU.files.filter((f) => f.id !== fid);
+    AU.buffers.delete(fid);
+    AU.files.push(rec);
+    await IDB.put(rec);
+    if (AU.ctx) AU.decode(rec);
+    L[id] = { sig: 's' + raw.byteLength + ':' + rec.name, v: r.v };
+    return true;
+  }
+  const rec = { id: fid, file: String(r.file || '').slice(0, 80), raw, size: raw.byteLength, added: +r.added || Date.now(),
+    family: String(r.family || 'My font').slice(0, 60), weight: Math.min(1000, Math.max(1, +r.weight || 400)), wmax: +r.wmax || 0, italic: !!r.italic };
+  FONTS.files = FONTS.files.filter((f) => f.id !== fid);
+  FONTS.files.push(rec);
+  await IDB.put(rec, 'fonts');
+  regFamily(famKeyOf(rec.family));
+  L[id] = { sig: 'f' + raw.byteLength + ':' + rec.family + ':' + rec.weight + ':' + (rec.italic ? 1 : 0), v: r.v };
+  return true;
+}
+// a removed sound file can't stay picked for an alert
+function soundSlotsDrop(fid) {
+  let hit = false;
+  for (const k of Object.keys(S.prefs.sound.slots)) if (S.prefs.sound.slots[k] === 'f:' + fid) { S.prefs.sound.slots[k] = SOUND_DEFAULTS[k] || 'none'; hit = true; }
+  if (hit) { applyPrefs(); savePrefs(); }
+}
+// swap in a whole set of settings while keeping the objects the open controls hold
+function replacePrefs(np) {
+  const m = mergePrefs(np);
+  for (const k of Object.keys(m)) {
+    const a = S.prefs[k], b = m[k];
+    if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
+      for (const kk of Object.keys(a)) if (!(kk in b)) delete a[kk];
+      Object.assign(a, b);
+    } else S.prefs[k] = b;
+  }
+  fontsSig = '';
+  applyPrefs();
+  savePrefs();
+}
+
+// ---------------------------------------------------------------- cloud copy housekeeping
+async function syncWipe() {
+  if (!SY.col) return false;
+  const col = SY.col;
+  for (const [id, x] of SY.remote) {
+    if (x && x.asset && SY.assets) await SY.assets.delete(x.asset).catch(() => {});
+    await col.doc(id).delete().catch(() => {});
+  }
+  for (const id of SY.chunks.keys()) await col.doc(id).delete().catch(() => {});
+  SY.cfg.on = false; SY.cfg.L = {};
+  syncCfgSave();
+  syncStop();
+  SY.remote = new Map(); SY.chunks = new Map();
+  return true;
+}
+
+// ---------------------------------------------------------------- backup file
+async function exportBackup(withFiles) {
+  await projSaveNow();
+  const dl = await getDownloads();
+  if (!dl) { toast('Saving files isn’t available in this view.'); return false; }
+  const o = {
+    quakerBackup: 1, app: 'Quaker v2', savedAt: new Date().toISOString(),
+    prefs: S.prefs, prefsAt: SY.cfg.pa || 0,
+    projects: PJ.list.filter((p) => p && okId(p.id) && !p.pristine),
+    sounds: [], fonts: [],
+  };
+  if (withFiles) {
+    for (const f of AU.files) if (f.raw && okId(f.id)) o.sounds.push({ id: f.id, name: f.name, dur: +f.dur || 0, data: bufToB64(f.raw) });
+    for (const f of FONTS.files) if (f.raw && okId(f.id)) o.fonts.push({ id: f.id, file: f.file, family: f.family, weight: f.weight, wmax: f.wmax || 0, italic: !!f.italic, added: f.added || 0, data: bufToB64(f.raw) });
+  }
+  const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+  const filename = `quaker-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  try {
+    await dl.save({ filename, data: new Blob([JSON.stringify(o)], { type: 'application/json' }) });
+    toast(`Saved ${filename}`, 2200);
+    return true;
+  } catch (e) { toast(dlErrorText(e, 'backup')); return false; }
+}
+async function importBackupFile(file) {
+  if (!file) return null;
+  let o;
+  try { o = JSON.parse(await file.text()); } catch (e) { toast('That file isn’t a Quaker backup.', 2600); return null; }
+  if (o && o.quaker === 2 && (o.d || o.e)) {                       // a single project file works here too
+    try { await projFromPayload(o, o.name, 'file'); toast(`Opened ${o.name || 'the project'}.`, 2000); } catch (e) { toast(e.message || 'That project file didn’t open.', 2600); }
+    return null;
+  }
+  if (!o || o.quakerBackup !== 1) { toast('That file isn’t a Quaker backup.', 2600); return null; }
+  return importBackup(o);
+}
+async function importBackup(o) {
+  const n = { p: 0, s: 0, f: 0, prefs: false };
+  if (o.prefs && typeof o.prefs === 'object') { replacePrefs(o.prefs); SY.cfg.pa = Date.now(); n.prefs = true; }
+  for (const rec of Array.isArray(o.projects) ? o.projects : []) {
+    if (!rec || !okId(rec.id)) continue;
+    const cur = PJ.list.find((p) => p.id === rec.id);
+    if (cur && !cur.pristine && (+cur.updated || 0) >= (+rec.updated || 0)) continue;   // yours is as new or newer
+    const clean = { ...rec, name: String(rec.name || 'Imported project').slice(0, 80), pristine: false, easy: rec.easy || defaultEasy() };
+    await IDB.put(clean, 'projects');
+    projUpsert(clean);
+    if (S.proj && S.proj.id === clean.id) projLoad(clean);
+    n.p++;
+  }
+  for (const s of Array.isArray(o.sounds) ? o.sounds : []) {
+    if (!s || !okId(s.id) || typeof s.data !== 'string' || AU.files.some((f) => f.id === s.id)) continue;
+    try {
+      const rec = { id: s.id, name: String(s.name || 'Sound').slice(0, 40), raw: b64ToBuf(s.data), dur: +s.dur || 0 };
+      AU.files.push(rec);
+      await IDB.put(rec);
+      if (AU.ctx) AU.decode(rec);
+      n.s++;
+    } catch (e) { /* a broken entry: skip it */ }
+  }
+  const fams = new Set();
+  for (const f of Array.isArray(o.fonts) ? o.fonts : []) {
+    if (!f || !okId(f.id) || typeof f.data !== 'string' || FONTS.files.some((x) => x.id === f.id)) continue;
+    try {
+      const raw = b64ToBuf(f.data);
+      const rec = { id: f.id, file: String(f.file || '').slice(0, 80), raw, size: raw.byteLength, added: +f.added || Date.now(),
+        family: String(f.family || 'My font').slice(0, 60), weight: Math.min(1000, Math.max(1, +f.weight || 400)), wmax: +f.wmax || 0, italic: !!f.italic };
+      const key = famKeyOf(rec.family);
+      if (FONTS.files.some((x) => famKeyOf(x.family) === key && x.weight === rec.weight && !!x.italic === rec.italic && !!x.wmax === !!rec.wmax)) continue;
+      FONTS.files.push(rec);
+      await IDB.put(rec, 'fonts');
+      fams.add(key);
+      n.f++;
+    } catch (e) { /* a broken entry: skip it */ }
+  }
+  for (const k of fams) regFamily(k);
+  fontsSig = '';
+  applyFonts();
+  projChipUI();
+  if ($('#dlgLibrary') && $('#dlgLibrary').open) renderProjects();
+  syncCfgSave();
+  syncSoon(300);
+  const bits = [];
+  if (n.p) bits.push(n.p === 1 ? '1 project' : n.p + ' projects');
+  if (n.s) bits.push(n.s === 1 ? '1 sound' : n.s + ' sounds');
+  if (n.f) bits.push(n.f === 1 ? '1 font' : n.f + ' fonts');
+  if (n.prefs) bits.push('your settings');
+  toast(bits.length ? 'Loaded ' + (bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0]) + '.' : 'Nothing new in that backup.', 2800);
+  return n;
+}
+
+// ---------------------------------------------------------------- settings tab
+function syncStatusText() {
+  const c = SY.cfg;
+  const counts = () => {
+    let p = 0, s = 0, f = 0;
+    for (const [id, x] of SY.remote) if (!x.del) { if (id.startsWith('p-')) p++; else if (id.startsWith('s-')) s++; else if (id.startsWith('f-')) f++; }
+    const b = [`${p} project${p === 1 ? '' : 's'}`];
+    if (c.files) b.push(`${s} sound${s === 1 ? '' : 's'}`, `${f} font${f === 1 ? '' : 's'}`);
+    return ' Your cloud copy has ' + b.join(', ') + '.';
+  };
+  switch (SY.status) {
+    case 'na': return ['off', 'Automatic sync works when Quaker is open in Claude. Here, move your stuff with a backup file.'];
+    case 'off': return ['off', 'Sync is off on this device.'];
+    case 'connecting': return ['busy', 'Connecting…'];
+    case 'busy': return ['busy', 'Syncing…'];
+    case 'ok': return ['ok', `Synced ${agoText(SY.at)}.` + counts()];
+    case 'slow': return ['warn', 'Can’t reach sync right now. It keeps trying and catches up when it can.'];
+    case 'view': return ['warn', 'This view can’t sync, because you’re signed out or only have view access. A backup file still works.'];
+    case 'full': return ['warn', 'The cloud copy is full. Remove some sound or font files, or turn off file sync.'];
+    default: return ['warn', 'Sync hit a snag' + (SY.msg ? `: ${SY.msg}` : '') + '. It’ll try again.'];
+  }
+}
+function syncUI() {
+  const el = $('#syncStatus');
+  if (!el) return;
+  const [cls, t] = syncStatusText();
+  el.className = 'sync-status ' + cls;
+  el.querySelector('.sync-t').textContent = t;
+  const sk = $('#syncSkips');
+  if (sk) {
+    sk.textContent = '';
+    for (const [id, why] of SY.skip) {
+      const k = id[0], rec = k === 's' ? AU.files.find((f) => f.id === id.slice(2)) : k === 'f' ? FONTS.files.find((f) => f.id === id.slice(2)) : null;
+      sk.append(h('li', { text: `${rec ? (rec.name || rec.family + ' ' + faceLabel(rec)) : id} is ${why}.` }));
+    }
+    sk.hidden = !SY.skip.size;
+  }
+}
+function buildSyncSettings() {
+  const root = $('#setSync');
+  if (!root) return;
+  root.textContent = '';
+  const c = SY.cfg, here = inClaude();
+  const status = h('div', { id: 'syncStatus', class: 'sync-status', role: 'status', 'aria-live': 'polite' }, h('span', { class: 'sync-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-t' }));
+  let wipeArm = 0;
+  const wipe = h('button', { type: 'button', class: 'btn sm danger', text: 'Delete the cloud copy', onclick: async () => {
+    if (Date.now() - wipeArm > 4000) { wipeArm = Date.now(); wipe.textContent = 'Tap again to delete it'; setTimeout(() => { wipe.textContent = 'Delete the cloud copy'; }, 4000); return; }
+    wipe.disabled = true;
+    await syncWipe();
+    toast('Deleted the cloud copy and turned sync off here. Everything on this device stays.', 3000);
+    buildSyncSettings();
+  } });
+  const syncBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: 'Automatic sync' }),
+    status,
+    h('p', { class: 'note', text: 'Your settings, the projects you’ve worked on, and your imported sounds and fonts follow you to any device where you open this Quaker in Claude, signed in as you. Untouched preloaded quakes stay put. When the same thing changed on two devices, the newer change wins, and an edit always beats a delete.' }));
+  if (here) {
+    syncBox.append(h('div', { class: 'list' },
+      cChk(() => c.on, async (v) => { c.on = v; syncCfgSave(); if (v) { await syncStart(); syncSoon(100); } else syncStop(); buildSyncSettings(); }, 'Sync automatically between my devices'),
+      cChk(() => c.files, (v) => { c.files = v; syncCfgSave(); syncSoon(200); syncUI(); }, 'Include my sound and font files', 'Files over about 15 MB stay on the device they’re on.')),
+    h('ul', { id: 'syncSkips', class: 'note sync-skips', hidden: true }),
+    h('div', { class: 'row' },
+      c.on ? btn('Sync now', () => { if (!SY.col) syncStart(); syncSoon(0); }, 'btn sm') : null,
+      SY.col && SY.ready ? wipe : null));
+  }
+  const bakIn = h('input', { type: 'file', accept: '.json,application/json', class: 'sr', id: 'bakUp' });
+  bakIn.addEventListener('change', async () => { const f = bakIn.files && bakIn.files[0]; bakIn.value = ''; if (f) { await importBackupFile(f); } });
+  const bakBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: 'Backup file' }),
+    h('p', { class: 'note', text: 'One file with everything. Load it on another device or keep it somewhere safe. Works on the website version too. Loading one keeps whichever copy of each project is newer, adds sounds and fonts you don’t have, and switches to the file’s settings.' }),
+    h('div', { class: 'list' }, cChk(() => c.bakFiles, (v) => { c.bakFiles = v; syncCfgSave(); }, 'Include sound and font files', 'Makes the file bigger.')),
+    h('div', { class: 'row' },
+      btn('Save a backup file…', () => exportBackup(c.bakFiles), 'btn'),
+      h('label', { class: 'btn', for: 'bakUp', text: 'Load a backup file…' }), bakIn));
+  root.append(syncBox, bakBox);
+  if (!root._drop) {
+    root._drop = true;
+    root.addEventListener('dragover', (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); root.classList.add('drop'); } });
+    root.addEventListener('dragleave', (e) => { if (!root.contains(e.relatedTarget)) root.classList.remove('drop'); });
+    root.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (!f) return; e.preventDefault(); root.classList.remove('drop'); importBackupFile(f); });
+  }
+  syncUI();
+}
+
 // ============================================================== Quaker v2 · app shell
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -7674,9 +8208,9 @@ function setLang(lang, announce) {
   prefsChanged();
   if (announce) toast(S.prefs.lang === 'en' ? 'On-screen graphics in English.' : 'On-screen graphics in Japanese broadcast style, with English subtitles.', 2200);
 }
-function savePrefs() { try { localStorage.setItem('quaker.v2.prefs', JSON.stringify(S.prefs)); } catch (e) { /* storage off */ } }
+function savePrefs() { try { localStorage.setItem('quaker.v2.prefs', JSON.stringify(S.prefs)); } catch (e) { /* storage off */ } syncCfgSave(); }
 let prefTimer = 0;
-function prefsChanged() { applyPrefs(); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 300); }
+function prefsChanged() { applyPrefs(); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 300); syncTouchPrefs(); }
 
 // ---------------------------------------------------------------- state persistence
 function saveState() {
@@ -7733,6 +8267,7 @@ async function projSaveNow() {
   const r = await IDB.put(rec, 'projects');
   PJ.ok = r !== null;
   projChipUI();
+  syncSoon();
 }
 function projSaveSoon() { clearTimeout(PJ.timer); PJ.timer = setTimeout(projSaveNow, 1200); }
 function sanitizeEasy(e) {
@@ -7796,14 +8331,16 @@ async function projOpen(id) {
 async function projRename(id, name) {
   name = String(name || '').trim().slice(0, 80);
   if (!name) return;
-  if (S.proj && S.proj.id === id) { S.proj.name = name; S.proj.pristine = false; await projSaveNow(); saveState(); }
+  if (S.proj && S.proj.id === id) { S.proj.name = name; S.proj.pristine = false; S.proj.updated = Date.now(); await projSaveNow(); saveState(); }
   else {
     const p = PJ.list.find((x) => x.id === id);
     if (!p) return;
-    p.name = name; p.pristine = false;
+    p.name = name; p.pristine = false; p.updated = Date.now();
+    SY.sigs.delete(p);
     await IDB.put(p, 'projects');
   }
   projChipUI();
+  syncSoon();
 }
 async function projDuplicate(id) {
   if (S.proj && S.proj.id === id) await projSaveNow();
@@ -7816,11 +8353,13 @@ async function projDuplicate(id) {
   PJ.list.push(c);
   await IDB.put(c, 'projects');
   renderProjects();
+  syncSoon();
   toast(`Made ${c.name}`, 1600);
 }
 async function projDelete(id) {
   PJ.list = PJ.list.filter((p) => p.id !== id);
   await IDB.del(id, 'projects');
+  syncSoon();
   if (S.proj && S.proj.id === id) {
     const next = PJ.list.slice().sort((a, b) => b.updated - a.updated)[0];
     if (next) projLoad(next);
@@ -9020,6 +9559,8 @@ function buildSettings() {
       h('p', { class: 'note', text: 'In Advanced, camera keys with the target “Follow the waves” use this too.' }))));
   // fonts
   buildFontSettings();
+  // sync and backup
+  buildSyncSettings();
   // sound
   buildSoundSettings();
   // recording
@@ -9307,8 +9848,9 @@ function migrateV1() {
 async function boot() {
   initRenderer(canvas);
   S.prefs = mergePrefs(loadJSON('quaker.v2.prefs'));
+  syncCfgLoad();
   applyPrefs();
-  loadFontFiles().catch(() => {});
+  const fontsP = loadFontFiles().catch(() => {});
   bindTransport(); bindEasy(); bindLibrary(); bindKeys(); edInit();
   setShow = bindTabs($('#setTabs'), $('#dlgSettings'));
   updatePlayButton();
@@ -9322,7 +9864,7 @@ async function boot() {
     $('#loading').append(h('span', { text: 'Couldn’t unpack the map data' }), h('span', { style: 'font-size:14px;letter-spacing:0;color:#8C9DB0', text: String(e.message || e) }));
     return;
   }
-  loadSoundFiles().catch(() => {});
+  const soundsP = loadSoundFiles().catch(() => {});
   S.saved = loadJSON('quaker.v2.saved') || [];
   let st = loadJSON('quaker.v2.state');
   if (!st) { const m = migrateV1(); if (m) st = { easy: m.easy, view: m.view, mode: 'easy' }; }
@@ -9334,7 +9876,9 @@ async function boot() {
     S.loop = st.loop === true;
   }
   // the open project: the one the saved state belongs to, or a fresh one wrapped around it
-  S.proj = st && st.proj && st.proj.id ? { ...projMeta(st.proj), name: st.proj.name || '' } : { id: newId('p'), name: '', created: Date.now(), updated: Date.now(), src: '', pristine: false };
+  // a first visit's project counts as untouched until you change something, so it doesn't sync or pile up
+  S.proj = st && st.proj && st.proj.id ? { ...projMeta(st.proj), name: st.proj.name || '' }
+    : { id: newId('p'), name: '', created: Date.now(), updated: Date.now(), src: st ? '' : 'preset:' + (S.easy.preset || 'md'), pristine: !st };
   for (const r of $$('input[name=speed]')) r.checked = +r.value === S.speed;
   $('#btnCam').setAttribute('aria-pressed', String(S.follow));
   $('#btnLoop').setAttribute('aria-pressed', String(S.loop));
@@ -9347,14 +9891,15 @@ async function boot() {
   $('#loading').hidden = true;
   applyPrefs();
   needRender = true;
-  projBoot();
+  Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
     S, R, AU, REC, ED,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
-      previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop },
+      previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop,
+      SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile },
   };
 }
 boot();
