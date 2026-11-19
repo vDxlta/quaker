@@ -400,6 +400,8 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
 .slots .nm.lvl .shi { grid-row: span 2; }
 .slots .nm.lvl small { grid-column: 2; }
 .slots.off { opacity: 0.45; }
+.intro-ctl { display: flex; flex-direction: column; gap: 10px; }
+.intro-ctl .f { margin: 0; }
 .set-h { font: 600 13px var(--font-num); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 18px 0 2px; padding-top: 14px; border-top: 1px solid var(--line); }
 .seg.lang label { font-size: 14px; letter-spacing: 0.08em; padding: 6px 10px; }
 .en-only { display: none; }
@@ -500,6 +502,8 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
     <button class="btn toggle" id="btnSound" type="button" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path id="soundWaves" d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Sound</span></button>
     <label class="sr" for="volume">Volume</label>
     <input class="vol" type="range" id="volume" min="0" max="1" step="0.05" value="0.7">
+    <button class="btn toggle icon" id="btnLoop" type="button" aria-pressed="false" aria-label="Loop" title="Loop: start over when it ends (O)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 7.5V6.5A2.5 2.5 0 0 1 5.5 4H12M10 2l2 2-2 2M13 8.5v1A2.5 2.5 0 0 1 10.5 12H4M6 14l-2-2 2-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="btn icon" id="btnSnap" type="button" aria-label="Save this frame as a picture" title="Save this frame as a picture (P)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1.1-1.6h3.6L10.9 4h1.6A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="8.3" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
     <button class="btn" id="btnFull" type="button" title="Fullscreen (F)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Fullscreen</span></button>
     <button class="btn rec" id="btnRecord" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg><span>Record video</span></button>
   </section>
@@ -561,6 +565,11 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
       <div class="field"><label for="animPreset">Box animation</label><select id="animPreset" class="full"></select></div>
       <label class="check"><input type="checkbox" id="camDetect" checked><span>Detection zoom<small>Snap to the epicenter at first detection, then step out in small jumps as the P and S waves spread. Tune it in Settings → Camera.</small></span></label>
       <div class="chips" id="views"></div>
+    </section>
+
+    <section class="card" aria-labelledby="inH">
+      <h2 id="inH">Intro screen<span class="ja">イントロ</span></h2>
+      <div class="intro-ctl" id="introCard"></div>
     </section>
 
     <section class="card" aria-labelledby="exH">
@@ -802,6 +811,10 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
         <span><kbd>H</kbd></span><span>Hide or show the selected boxes (Advanced)</span>
         <span><kbd>Alt</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></span><span>Move a box’s row up or down (Advanced)</span>
         <span><kbd>Esc</kbd></span><span>Cancel picking, close menus, then let go of the selection</span>
+        <span><kbd>,</kbd> <kbd>.</kbd></span><span>Jump to the previous or next key moment (detection, warning, report…)</span>
+        <span><kbd>I</kbd></span><span>Preview the intro screen</span>
+        <span><kbd>O</kbd></span><span>Loop on or off</span>
+        <span><kbd>P</kbd></span><span>Save this frame as a picture</span>
       </div>
       <h3 class="set-h" style="margin-top:6px">On the timeline</h3>
       <div class="kv" style="font-size:14px;gap:8px 16px">
@@ -2033,10 +2046,29 @@ const REAL_QUAKES = REAL_QUAKES_RAW.map((r) => ({
   max: r[10], epi: r[11], strike: r[12], hist: r[13] === 'hist', epoch: Date.parse(r[4]),
 }));
 
+// intro screen: a blurred, bare map with a title card, then the blur clears and the graphics come in
+const INTRO_DEFAULT = { on: false, style: 'card', kicker: '', title: '', sub: '', body: '', facts: true, note: true, bar: true,
+  color: '#E8101E', dur: 5, reveal: 1.6, blur: 16, dim: 0.35, when: 'always' };
+function normIntro(o) {
+  const x = { ...INTRO_DEFAULT, ...(o && typeof o === 'object' ? o : {}) };
+  const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? clamp(v, lo, hi) : d);
+  const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return {
+    on: !!x.on, style: ['card', 'lower', 'text'].includes(x.style) ? x.style : 'card',
+    kicker: str(x.kicker, 80), title: str(x.title, 120), sub: str(x.sub, 160), body: str(x.body, 600),
+    facts: x.facts !== false, note: x.note !== false, bar: x.bar !== false,
+    color: /^#[0-9a-f]{6}$/i.test(x.color) ? x.color : INTRO_DEFAULT.color,
+    dur: n(x.dur, 5, 1, 30), reveal: n(x.reveal, 1.6, 0.2, 6), blur: n(x.blur, 16, 0, 40), dim: n(x.dim, 0.35, 0, 0.9),
+    when: x.when === 'record' ? 'record' : 'always',
+  };
+}
+// a new project keeps the look of the last intro but not its words
+function introCarry(o) { const x = normIntro(o); return { ...x, kicker: '', title: '', sub: '', body: '' }; }
 const EXTRAS_DEFAULT = { flash: true, tsunami: true, megaquake: true, longperiod: false, aftershock: false, liquefaction: false, landslide: false, ticker: false, timestamp: false };
 function defaultEasy() {
   return { lat: 39.23, lon: -76.93, M: 6.6, depth: 10, strike: 40, my: null, extras: { ...EXTRAS_DEFAULT },
-    clock: { mode: 'now', start: '', tz: 'auto' }, name: null, targetMax: null, obsMap: null, kind: 'scenario', title: 'Central Maryland M6.6', preset: 'md', source: '', country: 'auto' };
+    clock: { mode: 'now', start: '', tz: 'auto' }, name: null, targetMax: null, obsMap: null, kind: 'scenario', title: 'Central Maryland M6.6', preset: 'md', source: '', country: 'auto',
+    intro: { ...INTRO_DEFAULT } };
 }
 
 // ---------------------------------------------------------------- document generation (Easy)
@@ -2091,6 +2123,7 @@ function generateDoc(DB, e) {
     cues: [],
     sensors: { density: 1, custom: [] },
     my: e.my ? { lat: +e.my.lat, lon: +e.my.lon } : null,
+    intro: normIntro(e.intro),
   };
   doc.items = defaultItemsFor(DB, doc, e.extras);
   return doc;
@@ -2145,6 +2178,7 @@ function normalizeDoc(d) {
   doc.meta = { title: '', kind: 'scenario', source: '', note: '', ...(doc.meta || {}) };
   doc.clock = { mode: 'now', start: '', tz: 'auto', ...(doc.clock || {}) };
   doc.duration = typeof doc.duration === 'number' && doc.duration > 5 ? doc.duration : null;
+  doc.intro = normIntro(doc.intro);
   const num = (v, dflt) => (typeof v === 'number' && isFinite(v) ? v : (typeof v === 'string' && v !== '' && isFinite(+v) ? +v : dflt));
   doc.events = (Array.isArray(doc.events) ? doc.events : []).filter((e) => e && typeof e === 'object').map((e, i) => ({
     id: e.id || 'e' + (i + 1), t0: num(e.t0, 0), lat: clamp(num(e.lat, 39.2), -80, 80), lon: num(e.lon, -76.9), depth: clamp(num(e.depth, 10), 0, 700),
@@ -2259,7 +2293,7 @@ function buildWorld(DB, doc, prefs) {
   for (const E of evs) {
     // per-quake overrides (Advanced) win over the Settings mapping for that slot
     const ov = E.ev.sounds || {};
-    const push = (t, slot) => { const o = ov[slot]; S.push(o && o !== 'default' ? { t, slot, sound: o } : { t, slot }); };
+    const push = (t, slot, rep) => { const o = ov[slot]; S.push(o && o !== 'default' ? { t, slot, sound: o, rep } : { t, slot, rep }); };
     if (E.ph.tDet !== null && E.ph.shaking) push(E.ev.t0 + E.ph.tDet - 0.2, 'detect');
     for (const r of E.reports) {
       let slot = 'update';
@@ -2267,7 +2301,7 @@ function buildWorld(DB, doc, prefs) {
       else if (r._firstWarn) slot = 'warning';
       else if (r._first) slot = 'forecast';
       else if (r.final) slot = 'final';
-      push(r.t, slot);
+      push(r.t, slot, r.id);
     }
     if (world.my && E.ph.shaking) {
       const rr = world.my.resp[evs.indexOf(E)];
@@ -2286,8 +2320,41 @@ function buildWorld(DB, doc, prefs) {
   }
   for (const c of doc.cues) S.push({ t: c.t, sound: c.sound, vol: c.vol });
   S.sort((a, b) => a.t - b.t);
+  world.baseSounds = S.slice();
   applyLevelSounds(world, prefs);
   return world;
+}
+// Forecast shindo sounds: the EEW's predicted max picks the sound (Settings → Sounds). They play on the first
+// report and each time the forecast climbs a row (or on every report), and by default stand in for the
+// regular forecast / warning / update chimes. The final and cancel chimes always keep their own sound.
+function fcPick(ov, slots, row) {
+  for (let i = row; i >= 0; i--) {
+    const key = FC_KEYS[i], o = ov[key];
+    if (o && o !== 'default' && o !== 'same') return { slot: key, sound: o };
+    if (o === 'same' || (slots[key] || SOUND_DEFAULTS[key]) === 'same') continue;
+    return { slot: key };
+  }
+  return { slot: FC_KEYS[0] };
+}
+function fcSoundTriggers(world, prefs) {
+  const out = [];
+  const snd = prefs && prefs.sound;
+  if (!snd || !snd.fcOn) return out;
+  const every = snd.fcWhen === 'every', replace = snd.fcMix !== 'both';
+  for (const E of world.evs) {
+    const ov = E.ev.sounds || {};
+    let top = -1;
+    for (const r of E.reports) {
+      if (r.kind === 'cancel') continue;
+      const p = reportPred(world, E, r);
+      const row = clamp((p ? p.maxIdx : -1) - 2, 0, FC_KEYS.length - 1);
+      const rose = row > top;
+      if (rose) top = row;
+      if (!(r.final ? rose : every || rose)) continue;
+      out.push({ t: r.t, ...fcPick(ov, snd.slots || {}, row), fc: row, rep: r.id, replace: replace && !r.final });
+    }
+  }
+  return out;
 }
 // rising-shindo sounds: one per level as the strongest shaking on the map (or at your location) climbs.
 // Levels that land on the same beat play only the highest one, so a sudden jump is one sound, not a pile-up.
@@ -2323,8 +2390,12 @@ function levelSoundTriggers(world, prefs) {
   });
   return out;
 }
+// the sounds that depend on Settings (forecast shindo, rising shindo) go on top of the scenario's own
 function applyLevelSounds(world, prefs) {
-  world.sounds = world.sounds.filter((s) => s.lvl === undefined).concat(levelSoundTriggers(world, prefs)).sort((a, b) => a.t - b.t);
+  const base = world.baseSounds || world.sounds.filter((s) => s.lvl === undefined && s.fc === undefined);
+  const fc = fcSoundTriggers(world, prefs);
+  const drop = new Set(fc.filter((s) => s.replace).map((s) => s.rep));
+  world.sounds = base.filter((s) => !(s.rep && drop.has(s.rep))).concat(fc, levelSoundTriggers(world, prefs)).sort((a, b) => a.t - b.t);
 }
 function evOf(world, id) {
   if (!id || id === 'auto') return null;
@@ -4723,6 +4794,8 @@ function renderFrame(F) {
       drawPlanned(c, p.x, p.y, lab, F.idle ? 1 : 0.75);
     });
   }
+  // bare: just the map (the intro screen blurs this and brings the rest in as it clears)
+  if (F.bare) { R.hits = []; return { status: statusOf(env), stale, scene, lay, env }; }
   // sensors + my location
   for (const sn of world.sensors) {
     const p = lonLatToScreen(sn.s.lon, sn.s.lat, vs);
@@ -4754,6 +4827,179 @@ function renderFrame(F) {
   return { status: statusOf(env), stale, scene, lay, env };
 }
 
+// ---------------------------------------------------------------- intro screen
+// Holds a blurred, bare map with a title card, then the blur clears and everything that should be on
+// screen at the start fades in. It runs before the clock starts (tau stays at the start).
+const INTRO = { key: '', bg: null, tmp: null, filter: null };
+function canFilter() {
+  if (INTRO.filter === null) {
+    try { const c = document.createElement('canvas').getContext('2d'); c.filter = 'blur(2px)'; INTRO.filter = c.filter === 'blur(2px)'; } catch (e) { INTRO.filter = false; }
+  }
+  return INTRO.filter;
+}
+// a blurred copy of the canvas: the canvas filter where there is one, else shrink and grow it back
+function blurCopy(src, px, into) {
+  const w = src.width, h = src.height;
+  const out = into && into.width === w && into.height === h ? into : document.createElement('canvas');
+  out.width = w; out.height = h;
+  const o = out.getContext('2d');
+  o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.filter = 'none';
+  o.clearRect(0, 0, w, h);
+  if (px <= 0.5) { o.drawImage(src, 0, 0); return out; }
+  if (canFilter()) {
+    // pad the edges so the blur doesn't pull in transparent black
+    o.filter = `blur(${px}px)`;
+    o.drawImage(src, -px * 2, -px * 2, w + px * 4, h + px * 4);
+    o.filter = 'none';
+    return out;
+  }
+  const f = clamp(px / 3, 2, 24);
+  const sw = Math.max(8, Math.round(w / f)), sh = Math.max(8, Math.round(h / f));
+  const a = document.createElement('canvas'); a.width = Math.max(sw * 2, 16); a.height = Math.max(sh * 2, 16);
+  const b = document.createElement('canvas'); b.width = sw; b.height = sh;
+  const ac = a.getContext('2d'), bc = b.getContext('2d');
+  ac.imageSmoothingQuality = 'high'; bc.imageSmoothingQuality = 'high'; o.imageSmoothingQuality = 'high';
+  ac.drawImage(src, 0, 0, a.width, a.height);
+  bc.drawImage(a, 0, 0, sw, sh);
+  o.drawImage(b, 0, 0, w, h);
+  return out;
+}
+function introTexts(world, cfg, originMs) {
+  const en = UI_LANG === 'en', E = world.main, ev = E.ev, nm = E.name || {};
+  const real = world.doc.meta.kind === 'real';
+  const M = 'M' + (+ev.M).toFixed(1);
+  const place = en ? nm.en || nm.ja || '' : nm.ja || nm.en || '';
+  const kicker = cfg.kicker || (en ? (real ? 'EARTHQUAKE REPLAY' : 'EARTHQUAKE SIMULATION') : real ? '地震の再現 · EARTHQUAKE REPLAY' : '地震シミュレーション · EARTHQUAKE SIMULATION');
+  const title = cfg.title || (place ? `${place} ${M}` : world.doc.meta.title || M);
+  const sub = cfg.sub || (!cfg.title && !en && nm.en && nm.ja ? `${nm.en} ${M}` : '');
+  const ck = fmtClock(originMs + ev.t0 * 1000, world.tz, { seconds: false });
+  const facts = cfg.facts ? [
+    [en ? 'EPICENTER' : '震源', place || (en ? 'Unknown' : '不明')],
+    [en ? 'MAGNITUDE' : '規模', M],
+    [en ? 'DEPTH' : '深さ', ev.depth < 5 ? (en ? 'Very shallow' : 'ごく浅い') : Math.round(ev.depth) + ' km'],
+    [en ? 'ORIGIN TIME' : '発生時刻', `${ck.date} ${ck.hm} ${ck.tz}`],
+  ] : [];
+  const note = !cfg.note ? '' : en ? (real ? 'REPLAY OF A PAST EARTHQUAKE · SIMULATED NETWORK' : 'SIMULATION · NOT A REAL EARTHQUAKE')
+    : real ? '【再現】過去の地震の再現です · REPLAY' : '【訓練】これは訓練です · SIMULATION';
+  return { kicker, title, sub, facts, note, body: cfg.body || '' };
+}
+const introFam = (s) => (hasCJK(s) ? FONT_JP : FONT_UI);
+// the title card. a = overall opacity, hold = 0..1 progress through the hold (countdown bar)
+function drawIntroCard(c, T, cfg, a, rise, hold) {
+  if (a <= 0.005) return;
+  const col = cfg.color;
+  c.save();
+  c.setTransform(R.K, 0, 0, R.K, 0, 0);
+  c.globalAlpha = a;
+  c.translate(0, rise);
+  const text = cfg.style === 'text';
+  const lower = cfg.style === 'lower';
+  const cardW = lower ? 1180 : 1040, padX = 48;
+  const innerW = cardW - padX * 2;
+  // measure
+  const tf = (px) => fnt(800, px, introFam(T.title));
+  const tpx = fitSize(c, T.title, innerW, introFam(T.title), 800, lower ? 64 : 76, 34);
+  const bodyF = fnt(500, 24, introFam(T.body));
+  const bodyLines = T.body ? wrapText(c, T.body, bodyF, innerW).slice(0, 6) : [];
+  const hgt = 58 + 20 + tpx + (T.sub ? 44 : 0) + (T.facts.length ? 26 + 76 : 0) + (bodyLines.length ? 20 + bodyLines.length * 34 : 0) + (T.note ? 46 : 8) + 34;
+  const x = lower ? 64 : (W - cardW) / 2;
+  const y = lower ? H - hgt - 120 : (H - hgt) / 2;
+  if (!text) {
+    c.shadowColor = 'rgba(0,0,0,0.45)'; c.shadowBlur = 40; c.shadowOffsetY = 12;
+    rr(c, x, y, cardW, hgt, 14); c.fillStyle = 'rgba(9,14,22,0.86)'; c.fill();
+    c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0;
+    c.lineWidth = 1; c.strokeStyle = 'rgba(120,150,180,0.28)'; rr(c, x + 0.5, y + 0.5, cardW - 1, hgt - 1, 14); c.stroke();
+    // accent along the top (or the left edge of a lower third)
+    c.save(); rr(c, x, y, cardW, hgt, 14); c.clip();
+    c.fillStyle = col;
+    if (lower) c.fillRect(x, y, 8, hgt); else c.fillRect(x, y, cardW, 6);
+    c.restore();
+  }
+  const halo = text ? 'rgba(5,9,15,0.75)' : null;
+  const cx = text ? W / 2 : x + padX + (lower ? 6 : 0), align = text ? 'center' : 'left';
+  let yy = y + 40 + 18;
+  // kicker
+  c.save();
+  if ('letterSpacing' in c) c.letterSpacing = '3px';
+  txt(c, T.kicker, cx, yy, fnt(700, 18, introFam(T.kicker)), col === '#E8101E' ? '#FF6B74' : col, align, halo, 4);
+  c.restore();
+  yy += 20 + tpx;
+  txt(c, T.title, cx, yy, tf(tpx), '#F4F8FB', align, halo, 6);
+  if (T.sub) { yy += 44; txt(c, T.sub, cx, yy, fnt(600, 28, introFam(T.sub)), '#B9C5D2', align, halo, 5); }
+  if (T.facts.length) {
+    yy += 26;
+    const n = T.facts.length, gap = 14, cw2 = (innerW - gap * (n - 1)) / n;
+    T.facts.forEach(([k, v], i) => {
+      const fx = (text ? (W - innerW) / 2 : x + padX + (lower ? 6 : 0)) + i * (cw2 + gap);
+      rr(c, fx, yy, cw2, 76, 8); c.fillStyle = text ? 'rgba(9,14,22,0.7)' : 'rgba(255,255,255,0.05)'; c.fill();
+      txt(c, k, fx + 14, yy + 26, fnt(700, 14, introFam(k)), '#7D8EA1');
+      const vf = introFam(v), vpx = fitSize(c, v, cw2 - 28, hasCJK(v) ? FONT_JP : FONT_NUM, 600, 30, 15);
+      txt(c, v, fx + 14, yy + 62, fnt(600, vpx, hasCJK(v) ? FONT_JP : vf === FONT_UI ? FONT_NUM : vf), '#F2F6FA');
+    });
+    yy += 76;
+  }
+  if (bodyLines.length) {
+    yy += 20;
+    for (const ln of bodyLines) { yy += 34; txt(c, ln, cx, yy - 8, bodyF, '#D6DFE8', align, halo, 4); }
+  }
+  if (T.note) { yy += 46; txt(c, T.note, cx, yy - 10, fnt(700, 16, introFam(T.note)), '#8FA0B3', align, halo, 4); }
+  // countdown bar
+  if (cfg.bar && hold !== null) {
+    const bx = text ? (W - innerW) / 2 : x + padX, bw = text ? innerW : cardW - padX * 2, by = text ? yy + 24 : y + hgt - 22;
+    rr(c, bx, by, bw, 4, 2); c.fillStyle = 'rgba(255,255,255,0.12)'; c.fill();
+    rr(c, bx, by, Math.max(4, bw * clamp(hold, 0, 1)), 4, 2); c.fillStyle = col; c.fill();
+  }
+  c.restore();
+}
+// F: the usual frame inputs; I = { t } seconds since the intro started
+function renderIntroFrame(F, I) {
+  const world = F.world, cfg = normIntro(world.doc.intro);
+  if (!world.rev) world.rev = ++R.worldSeq;
+  const c = R.ctx, cw = R.canvas.width, ch = R.canvas.height;
+  const px = cfg.blur * R.K;
+  const key = `${cw}x${ch}|${world.rev}|${px.toFixed(1)}|${UI_LANG}|${F.prefs.map.style}`;
+  let out = null;
+  if (INTRO.key !== key || !INTRO.bg) {
+    out = renderFrame({ ...F, bare: true });
+    INTRO.bg = blurCopy(R.canvas, px, INTRO.bg);
+    INTRO.key = key;
+  }
+  const T = introTexts(world, cfg, F.originMs);
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  if (I.t < cfg.dur) {
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.filter = 'none';
+    c.drawImage(INTRO.bg, 0, 0);
+    c.fillStyle = `rgba(4,8,14,${cfg.dim})`; c.fillRect(0, 0, cw, ch);
+    const pin = easeOut(clamp(I.t / 0.7, 0, 1));
+    drawIntroCard(c, T, cfg, pin, (1 - pin) * 26, I.t / cfg.dur);
+    R.hits = [];
+    return { status: { text: UI_LANG === 'en' ? 'INTRO' : 'INTRO · イントロ', kind: 'idle' }, stale: false, intro: true };
+  }
+  // reveal: the real first frame sharpens out of the blur while the card lifts away
+  const p = clamp((I.t - cfg.dur) / cfg.reveal, 0, 1), e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+  out = renderFrame(F);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
+  if (e < 1) {
+    if (canFilter() && px > 0.5) {
+      INTRO.tmp = INTRO.tmp && INTRO.tmp.width === cw && INTRO.tmp.height === ch ? INTRO.tmp : Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+      const t2 = INTRO.tmp.getContext('2d');
+      t2.setTransform(1, 0, 0, 1, 0, 0); t2.clearRect(0, 0, cw, ch); t2.drawImage(R.canvas, 0, 0);
+      const r = px * (1 - e);
+      c.filter = `blur(${r.toFixed(2)}px)`;
+      c.drawImage(INTRO.tmp, -r * 2, -r * 2, cw + r * 4, ch + r * 4);
+      c.filter = 'none';
+    }
+    // the bare blurred map fades out first, so the graphics come in instead of popping
+    c.globalAlpha = canFilter() ? 1 - easeOut(clamp(p * 2.2, 0, 1)) : 1 - e;
+    if (c.globalAlpha > 0) c.drawImage(INTRO.bg, 0, 0);
+    c.globalAlpha = 1;
+    c.fillStyle = `rgba(4,8,14,${(cfg.dim * (1 - e)).toFixed(3)})`; c.fillRect(0, 0, cw, ch);
+  }
+  const ca = 1 - clamp(p / 0.45, 0, 1);
+  drawIntroCard(c, T, cfg, ca, -(1 - ca) * 30, null);
+  return { ...out, intro: true };
+}
+
 // ============================================================== Quaker v2 · audio
 // Built-in synth library, user note-pattern sounds, uploaded files (IndexedDB), slot mapping, rumble, recording tap.
 const SOUND_SLOTS = [
@@ -4769,13 +5015,28 @@ const SOUND_SLOTS = [
   ['report', 'Intensity report', '震度情報'],
   ['tsunami', 'Tsunami box', '津波'],
   ['alert', 'Other alert boxes', 'その他の情報'],
+  ['intro', 'Intro screen appears', 'イントロ'],
 ];
 // rising shindo: one slot per level, 0 through 7
 const LEVEL_NAMES = ['0', '1', '2', '3', '4', '5-', '5+', '6-', '6+', '7'];
 const LEVEL_SLOTS = LEVEL_NAMES.map((n, k) => ['sh' + k, k ? 'Shindo ' + SH_EN[k - 1] : 'Shindo 0 (first movement)', '震度' + (k ? SH_JP[k - 1] : '0')]);
+// forecast shindo: the EEW's own predicted max picks the sound. 'same' = use the row below.
+// lvl = the LEVEL_NAMES index each row starts at (row 0 covers everything up to 3)
+const FC_SLOTS = [
+  ['fc3', 'Forecast 3 or lower', '予想震度3以下', 3], ['fc4', 'Forecast 4', '予想震度4', 4], ['fc5l', 'Forecast 5 Lower', '予想震度5弱', 5],
+  ['fc5u', 'Forecast 5 Upper', '予想震度5強', 6], ['fc6l', 'Forecast 6 Lower', '予想震度6弱', 7], ['fc6u', 'Forecast 6 Upper', '予想震度6強', 8], ['fc7', 'Forecast 7', '予想震度7', 9],
+];
+const FC_KEYS = FC_SLOTS.map((x) => x[0]);
 const SOUND_DEFAULTS = { detect: 'b:pips', forecast: 'b:chime2', warning: 'b:rising', update: 'b:tick', final: 'b:final', cancel: 'b:cancel',
-  countdown: 'b:countbeep', arrival: 'b:arrival', flash: 'b:report', report: 'b:chord', tsunami: 'b:siren', alert: 'b:doorbell',
-  ...Object.fromEntries(LEVEL_NAMES.map((n, k) => ['sh' + k, 'b:lv' + k])) };
+  countdown: 'b:countbeep', arrival: 'b:arrival', flash: 'b:report', report: 'b:chord', tsunami: 'b:siren', alert: 'b:doorbell', intro: 'none',
+  ...Object.fromEntries(LEVEL_NAMES.map((n, k) => ['sh' + k, 'b:lv' + k])),
+  fc3: 'b:chime2', fc4: 'same', fc5l: 'b:rising', fc5u: 'same', fc6l: 'same', fc6u: 'same', fc7: 'same' };
+// walk a forecast row down past 'same' to the row whose sound actually plays
+function fcResolve(slots, slot) {
+  let i = FC_KEYS.indexOf(slot);
+  while (i > 0 && (slots[FC_KEYS[i]] || SOUND_DEFAULTS[FC_KEYS[i]]) === 'same') i--;
+  return FC_KEYS[Math.max(0, i)];
+}
 const NOTE_IDX = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function noteFreq(tok) {
   const m = String(tok).trim().match(/^([A-Ga-g])([#b♯♭]?)(-?\d)$/);
@@ -4898,7 +5159,9 @@ const AU = {
     return tt - t;
   },
   playSlot(slot, extraVol = 1) {
-    const id = this.slots[slot] || SOUND_DEFAULTS[slot];
+    if (FC_KEYS.includes(slot)) slot = fcResolve(this.slots, slot);
+    let id = this.slots[slot] || SOUND_DEFAULTS[slot];
+    if (id === 'same') id = SOUND_DEFAULTS[slot] === 'same' ? 'b:chime2' : SOUND_DEFAULTS[slot];
     const v = (this.slotVol[slot] ?? 1) * extraVol;
     const d = this.play(id, v);
     // a removed file or pattern falls back to the built-in default instead of going silent
@@ -5403,29 +5666,7 @@ function edZoom(f, clientX) {
 }
 
 // ---------------------------------------------------------------- key moments (ruler pills, guide lines, snap targets)
-function edMoments() {
-  const w = S.world, d = S.adv, out = [];
-  const many = w.evs.length > 1;
-  w.evs.forEach((E, i) => {
-    const pre = many ? `E${i + 1} ` : '';
-    const t0 = E.ev.t0;
-    if (E.ph.tDet !== null && E.ph.shaking) out.push({ t: t0 + E.ph.tDet, label: pre + 'Detect', c: '#FFD34D', tip: 'Shaking first detected', src: E.id });
-    const r0 = E.reports[0], fw = E.reports.find((r) => r._firstWarn), fin = E.reports.find((r) => r.final);
-    if (r0) out.push(fw === r0 ? { t: r0.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'First EEW, already a warning', src: r0.id } : { t: r0.t, label: pre + 'EEW', c: '#F2B000', tip: 'First EEW report', src: r0.id });
-    if (fw && fw !== r0) out.push({ t: fw.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'EEW upgraded to a warning', src: fw.id });
-    if (fin && fin !== r0) out.push({ t: fin.t, label: pre + 'Final', c: '#C9D6E3', tip: 'Final EEW report', src: fin.id });
-    if (w.my && E.ph.shaking) {
-      const rr = w.my.resp[i];
-      if (rr && rr.Ipk >= 0.5 && isFinite(rr.tS)) out.push({ t: t0 + rr.tS, label: pre + 'S at you', c: '#4CC38A', tip: 'The S-wave reaches your location', src: E.id });
-    }
-  });
-  for (const it of d.items) {
-    if (it.hidden || (it.type !== 'flash' && it.type !== 'report')) continue;
-    const pre = many && it.ev !== 'auto' ? evIndex(it.ev) + ' ' : '';
-    out.push(it.type === 'flash' ? { t: it.t0, label: pre + 'Flash', c: '#6FA8FF', tip: 'Intensity flash appears', src: it.id } : { t: it.t0, label: pre + 'Report', c: '#46A5FF', tip: 'Intensity report appears', src: it.id });
-  }
-  return out.filter((m) => isFinite(m.t) && m.t >= T_START - 1).sort((a, b) => a.t - b.t);
-}
+function edMoments() { return keyMoments(S.world); }
 
 // ---------------------------------------------------------------- timeline DOM
 const EYE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
@@ -6450,6 +6691,7 @@ function inspDoc() {
         pickBtn('Click the sensor spot', (lat, lon) => edEdit(() => { sn.lat = lat; sn.lon = lon; }, { structural: true })),
         btn('Remove', () => edEdit(() => { d.sensors.custom = d.sensors.custom.filter((x) => x !== sn); }, { structural: true }), 'btn sm danger'))));
   }
+  out.push(fg('Intro screen', ...introControls(() => d.intro, introSet)));
   out.push(fg('Your own sensors', h('p', { class: 'note', text: 'Diamond markers that light up with their own shaking, and can join the countdown list.' }), sl,
     h('div', { class: 'row' }, btn('＋ Add sensor (pick on map)', () => startPick('Click where the sensor goes', (lat, lon) => edEdit(() => { d.sensors.custom.push({ id: newId('k'), name: 'Sensor ' + (d.sensors.custom.length + 1), lat, lon, amp: 1.4, countdown: true }); }, { structural: true }))))));
   return out;
@@ -6662,15 +6904,25 @@ function inspEvent(ev) {
     const SLOTS_EV = [['detect', 'Shaking detected'], ['forecast', 'First forecast'], ['warning', 'Warning issued'], ['update', 'Each update'], ['final', 'Final report'], ['cancel', 'Cancelled'], ['countdown', 'Countdown beeps'], ['arrival', 'Shaking arrives']];
     const sg = fg(`Sounds for quake E${i + 1}`,
       h('p', { class: 'note', text: 'Default = whatever Settings → Sounds plays for everyone. Pick or import something else to give just this quake its own alerts, like a different chime for an aftershock.' }));
-    const evSoundRow = (slot, label) => {
+    const evSoundRow = (slot, label, extra) => {
       const cur = () => (ev.sounds && ev.sounds[slot]) || 'default';
       const setS = (v) => edEdit(() => { const o = { ...(ev.sounds || {}) }; if (v === 'default') delete o[slot]; else o[slot] = v; ev.sounds = o; }, { coalesce: ev.id + ':snd:' + slot });
+      const preview = () => {
+        AU.ensure();
+        if (FC_KEYS.includes(slot)) { const pk = fcPick(ev.sounds || {}, AU.slots, FC_KEYS.indexOf(slot)); if (pk.sound && AU.has(pk.sound)) AU.play(pk.sound, AU.slotVol[pk.slot] ?? 1); else AU.playSlot(pk.slot); return; }
+        const id = cur(); if (id === 'default' || !AU.has(id)) AU.playSlot(slot); else AU.play(id, AU.slotVol[slot] ?? 1);
+      };
       return fRow(label, h('div', { class: 'row', style: 'flex:1;flex-wrap:nowrap;gap:6px;min-width:0' },
-        soundSel(cur, setS, true),
-        h('button', { type: 'button', class: 'btn sm', text: '▶', 'aria-label': 'Preview ' + label, onclick: () => { AU.ensure(); const id = cur(); if (id === 'default' || !AU.has(id)) AU.playSlot(slot); else AU.play(id, AU.slotVol[slot] ?? 1); } }),
+        soundSel(cur, setS, true, extra || []),
+        h('button', { type: 'button', class: 'btn sm', text: '▶', 'aria-label': 'Preview ' + label, onclick: preview }),
         h('button', { type: 'button', class: 'btn sm', text: 'Import…', 'aria-label': 'Import a sound for ' + label, onclick: () => pickSoundFile((id) => { setS(id); edInspector(); edRender(); }) })));
     };
     for (const [slot, label] of SLOTS_EV) sg.append(evSoundRow(slot, label));
+    const fcd = h('details', { class: 'lvl-snd' }, h('summary', { text: 'Forecast shindo sounds for this quake' }),
+      h('p', { class: 'note', text: S.prefs.sound.fcOn ? 'The EEW’s forecast picks one of these. Default follows Settings → Sounds.' : 'These only play once Forecast shindo is turned on in Settings → Sounds.' }));
+    if (FC_SLOTS.some(([k]) => ev.sounds && ev.sounds[k])) fcd.open = true;
+    FC_SLOTS.forEach(([slot, label], k) => fcd.append(evSoundRow(slot, label, k > 0 ? [['same', `Same as ${FC_SLOTS[k - 1][1].replace(/^Forecast /, '')}`]] : [])));
+    sg.append(fcd);
     const lv = h('details', { class: 'lvl-snd' }, h('summary', { text: 'Rising shindo sounds for this quake' }));
     if (LEVEL_SLOTS.some(([k]) => ev.sounds && ev.sounds[k])) lv.open = true;
     for (const [slot, label] of LEVEL_SLOTS) lv.append(evSoundRow(slot, label.replace(/ \(first movement\)$/, '')));
@@ -6795,7 +7047,7 @@ const PREFS_DEFAULT = {
   map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1 },
   fx: { shake: 0.6, vignette: true, reveal: true, shadows: true },
   clock: { h12: false },
-  sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net' },
+  sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'up', fcMix: 'replace' },
   rec: { res: 1080, fps: 30, sound: true },
   cam: { ...CAM_DEFAULT },
   lang: 'ja',
@@ -6840,7 +7092,7 @@ const S = {
   DB: null, prefs: deepCopy(PREFS_DEFAULT), eff: null, mode: 'easy', easy: defaultEasy(), adv: null, doc: null, world: null,
   tau: T_START, state: 'idle', ended: false, originMs: Date.now(), originFixed: false, speed: 1, follow: true,
   sel: null, multi: [], pick: null, recording: false, saved: [], ready: false, stale: false, everPlayed: false,
-  undo: [], redo: [], proj: null,
+  undo: [], redo: [], proj: null, intro: null, loop: false,
 };
 let needRender = true;
 const canvas = $('#stage');
@@ -6905,7 +7157,7 @@ function prefsChanged() { applyPrefs(); clearTimeout(prefTimer); prefTimer = set
 // ---------------------------------------------------------------- state persistence
 function saveState() {
   try {
-    localStorage.setItem('quaker.v2.state', JSON.stringify({ mode: S.mode, easy: S.easy, adv: S.adv, view: R.view, speed: S.speed, follow: S.follow, proj: S.proj }));
+    localStorage.setItem('quaker.v2.state', JSON.stringify({ mode: S.mode, easy: S.easy, adv: S.adv, view: R.view, speed: S.speed, follow: S.follow, loop: S.loop, proj: S.proj }));
   } catch (e) { /* storage off or full */ }
 }
 let stateTimer = 0;
@@ -6964,6 +7216,7 @@ function sanitizeEasy(e) {
   const o = { ...defaultEasy(), ...e };
   o.extras = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
   o.clock = { mode: 'now', start: '', tz: 'auto', ...(e.clock || {}) };
+  o.intro = normIntro(e.intro);
   return o;
 }
 // swap the working state over to a project record
@@ -7183,12 +7436,16 @@ function setViewPreset(id) {
 }
 
 // ---------------------------------------------------------------- playback
-function startPlayback(fromStart) {
+// opts.intro: 'force' plays the intro screen even when it is set to recordings only
+function startPlayback(fromStart, opts = {}) {
   if (!S.world || S.recording && !fromStart && S.state === 'playing') return;
   if (fromStart || S.state === 'idle' || S.ended) {
     S.tau = T_START; S.ended = false;
     if (!S.originFixed) S.originMs = nowOrigin();
     R.camFrom = S.follow ? { view: { ...R.fv }, tau: T_START } : null;
+    const ic = S.doc && S.doc.intro;
+    S.intro = ic && ic.on && (ic.when !== 'record' || S.recording || opts.intro === 'force') ? { t: 0 } : null;
+    if (S.intro) { INTRO.key = ''; AU.ensure(); AU.playSlot('intro'); }
   }
   R.camHold = !S.follow;
   AU.ensure();
@@ -7204,7 +7461,7 @@ function togglePlay() {
   if (S.state === 'playing') pausePlayback(); else startPlayback(false);
 }
 function resetToIdle() {
-  S.state = 'idle'; S.tau = T_START; S.ended = false;
+  S.state = 'idle'; S.tau = T_START; S.ended = false; S.intro = null;
   R.camFrom = null;
   AU.rumble(0);
   updatePlayButton();
@@ -7212,6 +7469,7 @@ function resetToIdle() {
 }
 function seek(tau) {
   if (!S.world || S.recording) return;
+  S.intro = null;
   if (S.state === 'idle') { S.state = 'paused'; if (!S.originFixed) S.originMs = nowOrigin(); R.camHold = !S.follow; }
   S.tau = clamp(tau, T_START, S.world.tEnd);
   S.ended = S.tau >= S.world.tEnd;
@@ -7379,7 +7637,7 @@ let lastStatus = '';
 function doRender() {
   if (!S.world) return;
   const adv = S.mode === 'adv';
-  const out = renderFrame({
+  const out = (S.intro ? (F) => renderIntroFrame(F, S.intro) : renderFrame)({
     world: S.world, tau: S.tau, prefs: S.eff, idle: S.state === 'idle', originMs: S.originMs, tStart: T_START,
     selected: adv ? edSelItemSet() : null, showEvents: adv && S.state !== 'playing', pick: !!S.pick,
     selEv: adv && S.sel && S.sel.kind === 'event' ? S.sel.id : null,
@@ -7393,11 +7651,21 @@ function frame(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   if (S.ready && S.world) {
-    if (S.state === 'playing') {
+    if (S.state === 'playing' && S.intro) {
+      // the intro runs on real time; the scenario clock waits at the start until it's done
+      const ic = normIntro(S.doc.intro);
+      S.intro.t += dt;
+      if (S.intro.t >= ic.dur + ic.reveal) S.intro = null;
+      needRender = true;
+    } else if (S.state === 'playing') {
       const prev = S.tau;
       S.tau = Math.min(S.world.tEnd, S.tau + dt * S.speed);
       fireSounds(prev, S.tau);
-      if (S.tau >= S.world.tEnd) { S.state = 'paused'; S.ended = true; updatePlayButton(); if (S.recording) stopRecording(); }
+      if (S.tau >= S.world.tEnd) {
+        S.state = 'paused'; S.ended = true; updatePlayButton();
+        if (S.recording) stopRecording();
+        else if (S.loop) setTimeout(() => { if (S.loop && S.ended && S.state === 'paused' && !S.recording) startPlayback(true); }, 1500);
+      }
       needRender = true;
     } else if (S.state === 'idle') {
       const sec = Math.floor(Date.now() / 1000);
@@ -7411,7 +7679,7 @@ function frame(now) {
 function hud(now) {
   const tl = $('#timeline');
   if (document.activeElement !== tl) tl.value = S.tau.toFixed(1);
-  $('#timeOut').textContent = (S.tau < 0 ? '−' : '+') + Math.abs(S.tau).toFixed(1) + ' s';
+  $('#timeOut').textContent = S.intro ? 'Intro' : (S.tau < 0 ? '−' : '+') + Math.abs(S.tau).toFixed(1) + ' s';
   if (S.recording) { const el = Math.floor((now - REC.t0) / 1000); $('#recTime').textContent = `${Math.floor(el / 60)}:${String(el % 60).padStart(2, '0')}`; }
   $('#camChip').hidden = S.follow || S.state === 'idle' || S.doc.camera.mode === 'off' || S.recording;
   if (S.mode === 'adv') edPlayhead();
@@ -7487,6 +7755,11 @@ function hitBox(p) {
 }
 canvas.addEventListener('pointerdown', (e) => {
   if (!S.ready) return;
+  if (S.intro && !S.recording) {
+    const ic = normIntro(S.doc.intro);
+    if (S.intro.t < ic.dur) { S.intro.t = ic.dur; needRender = true; if (S.state !== 'playing') startPlayback(false); }
+    return;
+  }
   canvas.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   moved = false;
@@ -7601,6 +7874,8 @@ function bindTransport() {
   $('#btnSound').addEventListener('click', () => { S.prefs.sound.on = !S.prefs.sound.on; AU.ensure(); prefsChanged(); });
   $('#volume').addEventListener('input', (e) => { S.prefs.sound.vol = +e.target.value; AU.ensure(); prefsChanged(); });
   $('#btnFull').addEventListener('click', toggleFullscreen);
+  $('#btnLoop').addEventListener('click', () => setLoop(!S.loop));
+  $('#btnSnap').addEventListener('click', () => saveFrame());
   $('#btnCam').addEventListener('click', () => setFollow(!S.follow));
   $('#camChip').addEventListener('click', () => setFollow(true));
   $('#pickCancel').addEventListener('click', endPick);
@@ -7746,16 +8021,19 @@ function updateEasyUI() {
   $('#mapStyle').value = S.prefs.map.style;
   $('#animPreset').value = ANIM_PRESETS[S.prefs.anim.preset] ? S.prefs.anim.preset : 'custom';
   $('#camDetect').checked = !!S.prefs.cam.detectZoom;
+  buildIntroCard();
 }
-function presetEasy(id) {
+// sameProject: the Easy preset menu keeps this project's intro as is; a new project only keeps its look
+function presetEasy(id, sameProject) {
   const p = PRESETS.find((q) => q.id === id);
   if (!p) return null;
   return { ...defaultEasy(), my: S.easy.my, extras: { ...S.easy.extras }, clock: { mode: 'now', start: '', tz: S.easy.clock.tz === 'auto' ? 'auto' : S.easy.clock.tz },
-    lat: p.lat, lon: p.lon, M: p.M, depth: p.depth, strike: p.strike, preset: id, title: p.en, kind: 'scenario' };
+    lat: p.lat, lon: p.lon, M: p.M, depth: p.depth, strike: p.strike, preset: id, title: p.en, kind: 'scenario',
+    intro: sameProject ? normIntro(S.easy.intro) : introCarry(S.easy.intro) };
 }
 // the Easy preset menu changes the open project
 function loadPreset(id) {
-  const e = presetEasy(id);
+  const e = presetEasy(id, true);
   if (e) loadEasy(e, { fit: id === 'md' ? 'midatl' : 'fit' });
 }
 // the Library opens a preset as its own project
@@ -7766,6 +8044,7 @@ function openPreset(id) {
 }
 function loadEasy(e, opts = {}) {
   e.extras = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
+  e.intro = normIntro(e.intro);
   if (S.mode === 'adv') {
     edPushUndo();
     S.easy = e;
@@ -7779,8 +8058,118 @@ function loadEasy(e, opts = {}) {
 function loadReal(q) {
   if (!q) return Promise.resolve();
   const e = easyFromReal(S.DB, q);
-  e.my = S.easy.my; e.extras = { ...S.easy.extras };
+  e.my = S.easy.my; e.extras = { ...S.easy.extras }; e.intro = introCarry(S.easy.intro);
   return projStart(q.en, 'real:' + q.id, e).then(() => { closeAllDialogs(); toast(`${q.en}. Press Play.`); });
+}
+
+// ---------------------------------------------------------------- intro screen controls (Easy card + Advanced Scenario panel)
+// get(): the intro object, set(key, value, structural)
+function introControls(get, set) {
+  const I = () => normIntro(get());
+  const auto = S.world ? introTexts(S.world, { ...I(), title: '', sub: '', kicker: '' }, S.originMs) : { title: '', kicker: '', sub: '' };
+  const out = [cChk(() => I().on, (v) => set('on', v, true), 'Show an intro screen first', 'A title card on a blurred map. When it clears, whatever should be on screen comes in and the quake starts.')];
+  if (!I().on) return out;
+  const up = (k) => (v) => set(k, v);
+  out.push(
+    fRow('Title', cText(() => I().title, up('title'), { ph: auto.title, max: 120 })),
+    fRow('Subtitle', cText(() => I().sub, up('sub'), { ph: auto.sub || 'Optional', max: 160 })),
+    fRow('Top line', cText(() => I().kicker, up('kicker'), { ph: auto.kicker, max: 80 })),
+    fRow('More text', cArea(() => I().body, up('body'), { rows: 3, ph: 'Anything else you want on the card. New line = new line.', max: 600 })),
+    fRow('Layout', cSel(() => I().style, up('style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Just the text']])),
+    fRow('Accent', cColor(() => I().color, up('color'))),
+    cChk(() => I().facts, up('facts'), 'Quake facts', 'Epicenter, magnitude, depth and origin time'),
+    cChk(() => I().note, up('note'), 'Drill or replay note'),
+    cChk(() => I().bar, up('bar'), 'Countdown bar'),
+    fRow('Hold for', cRange(() => I().dur, up('dur'), { min: 1, max: 15, step: 0.5, fmt: (v) => v.toFixed(1) + ' s' })),
+    fRow('Clear-up', cRange(() => I().reveal, up('reveal'), { min: 0.3, max: 4, step: 0.1, fmt: (v) => v.toFixed(1) + ' s' }), 'How long the blur takes to clear and the graphics to come in.'),
+    fRow('Blur', cRange(() => I().blur, up('blur'), { min: 0, max: 40, step: 1, fmt: (v) => v + ' px' })),
+    fRow('Darken', cRange(() => I().dim, up('dim'), { min: 0, max: 0.8, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })),
+    fRow('Show it', cSel(() => I().when, up('when'), [['always', 'Every time'], ['record', 'Recordings and previews only']])),
+    h('div', { class: 'row' }, btn('▶ Preview intro', previewIntro), h('span', { class: 'note', text: 'Click the stage to skip ahead. Settings → Sounds can give it a sound.' })));
+  return out;
+}
+function introSet(k, v, structural) {
+  if (S.recording) return;
+  if (S.mode === 'adv' && S.adv) {
+    edEdit(() => { S.adv.intro = { ...normIntro(S.adv.intro), [k]: v }; }, structural ? { structural: true } : { coalesce: 'intro:' + k, quiet: true });
+    needRender = true;
+    return;
+  }
+  S.easy.intro = { ...normIntro(S.easy.intro), [k]: v };
+  if (S.doc) S.doc.intro = normIntro(S.easy.intro);
+  needRender = true;
+  saveStateSoon();
+  if (structural) buildIntroCard(true);
+}
+function buildIntroCard(force) {
+  const root = $('#introCard');
+  if (!root || (!force && root.contains(document.activeElement))) return;
+  root.textContent = '';
+  root.append(...introControls(() => S.easy.intro, introSet));
+  if (S.recording) for (const el of $$('input,select,textarea,button', root)) el.disabled = true;
+}
+function previewIntro() {
+  if (S.recording || !S.doc || !S.doc.intro || !S.doc.intro.on) return;
+  const r = canvas.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) canvas.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  startPlayback(true, { intro: 'force' });
+}
+// ---------------------------------------------------------------- key moments (timeline tags, and , . to jump between them)
+function keyMoments(world) {
+  const out = [];
+  if (!world) return out;
+  const many = world.evs.length > 1;
+  world.evs.forEach((E, i) => {
+    const pre = many ? `E${i + 1} ` : '';
+    const t0 = E.ev.t0;
+    if (E.ph.tDet !== null && E.ph.shaking) out.push({ t: t0 + E.ph.tDet, label: pre + 'Detect', c: '#FFD34D', tip: 'Shaking first detected', src: E.id });
+    const r0 = E.reports[0], fw = E.reports.find((r) => r._firstWarn), fin = E.reports.find((r) => r.final);
+    if (r0) out.push(fw === r0 ? { t: r0.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'First EEW, already a warning', src: r0.id } : { t: r0.t, label: pre + 'EEW', c: '#F2B000', tip: 'First EEW report', src: r0.id });
+    if (fw && fw !== r0) out.push({ t: fw.t, label: pre + 'Warning', c: '#FF5A5F', tip: 'EEW upgraded to a warning', src: fw.id });
+    if (fin && fin !== r0) out.push({ t: fin.t, label: pre + 'Final', c: '#C9D6E3', tip: 'Final EEW report', src: fin.id });
+    if (world.my && E.ph.shaking) {
+      const rr = world.my.resp[i];
+      if (rr && rr.Ipk >= 0.5 && isFinite(rr.tS)) out.push({ t: t0 + rr.tS, label: pre + 'S at you', c: '#4CC38A', tip: 'The S-wave reaches your location', src: E.id });
+    }
+  });
+  for (const it of world.items) {
+    if (it.type !== 'flash' && it.type !== 'report') continue;
+    const k = world.evs.findIndex((E) => E.id === it.ev);
+    const pre = many && k >= 0 ? `E${k + 1} ` : '';
+    out.push(it.type === 'flash' ? { t: it.t0, label: pre + 'Flash', c: '#6FA8FF', tip: 'Intensity flash appears', src: it.id } : { t: it.t0, label: pre + 'Report', c: '#46A5FF', tip: 'Intensity report appears', src: it.id });
+  }
+  return out.filter((m) => isFinite(m.t) && m.t >= T_START - 1).sort((a, b) => a.t - b.t);
+}
+function jumpMoment(dir) {
+  if (!S.world || S.recording) return;
+  const ms = keyMoments(S.world), t = S.tau;
+  const m = dir > 0 ? ms.find((x) => x.t > t + 0.05) : ms.slice().reverse().find((x) => x.t < t - 0.3);
+  if (m) { seek(m.t); toast(`${m.label} · ${fmtT(m.t)}`, 1100); }
+  else if (dir < 0) seek(T_START);
+  else toast('That was the last one.', 1100);
+}
+function setLoop(on) {
+  S.loop = !!on;
+  $('#btnLoop').setAttribute('aria-pressed', String(S.loop));
+  toast(S.loop ? 'Loop on: it starts over when it ends.' : 'Loop off.', 1400);
+  saveStateSoon();
+}
+// a still of the current moment as a 1920×1080 PNG
+async function saveFrame() {
+  if (!S.world || S.recording) return;
+  const dl = await getDownloads();
+  if (!dl) { toast('Saving files needs the Claude viewer. Open this page in Claude to save it.'); return; }
+  const k0 = R.K;
+  setRenderScale(1);
+  doRender();
+  const blob = await new Promise((res) => { try { canvas.toBlob(res, 'image/png'); } catch (e) { res(null); } });
+  setRenderScale(k0);
+  needRender = true;
+  if (!blob) { toast('This browser couldn’t make the picture.'); return; }
+  const at = S.intro ? 'intro' : (S.tau < 0 ? 'minus' : '') + Math.abs(S.tau).toFixed(1).replace('.', '_') + 's';
+  const filename = `quaker-${slugOf()}-${at}.png`;
+  try { await dl.save({ filename, data: blob }); toast(`Saved ${filename}`, 2000); }
+  catch (e) { toast(dlErrorText(e, 'picture')); }
 }
 
 // ---------------------------------------------------------------- share payloads
@@ -8151,10 +8540,10 @@ function dropSound(el, assign) {
   });
 }
 // sound picker that names files missing from this browser instead of showing a raw id
-function soundSel(get, set, withDefault) {
-  const opts = soundOptions(withDefault);
+function soundSel(get, set, withDefault, extra = []) {
+  const opts = [...extra, ...soundOptions(withDefault)];
   const cur = get();
-  if (cur && !AU.has(cur)) opts.unshift([cur, 'Missing sound (plays the default)']);
+  if (cur && !AU.has(cur) && !extra.some(([v]) => v === cur)) opts.unshift([cur, 'Missing sound (plays the default)']);
   const sel = cSel(get, set, opts);
   sel.style.cssText = 'flex:1;min-width:0';
   return sel;
@@ -8168,12 +8557,14 @@ function buildSoundSettings() {
     fRow('Master volume', cRange(() => P.sound.vol, prefSet(P.sound, 'vol'), { min: 0, max: 1, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' }))));
   root.append(h('p', { class: 'note', text: 'Every alert can use a built-in sound, one of your note patterns, or your own audio file. Press Import… on a row (or drop a file onto it) to load a file straight into that slot. In Advanced, each quake, box and cue can have its own sounds too.' }));
   // one grid row per slot: what triggers it, the sound, its volume, preview and import
-  const slotGrid = (list, chips) => {
+  const slotGrid = (list, chips, fc) => {
     const grid = h('div', { class: 'slots' }, h('span', { class: 'h', text: chips ? 'Level' : 'When' }), h('span', { class: 'h', text: 'Sound' }), h('span', { class: 'h', text: 'Volume' }), h('span', { class: 'h', text: '' }));
-    list.forEach(([slot, label, ja], k) => {
+    list.forEach(([slot, label, ja, lvl], k) => {
       const assign = (id) => { P.sound.slots[slot] = id; prefsChanged(); buildSoundSettings(); };
-      const nm = h('span', { class: chips ? 'nm lvl' : 'nm' }, chips ? levelChip(k) : null, label, h('small', { class: 'ja', text: ja }));
-      const sel = soundSel(() => P.sound.slots[slot] || SOUND_DEFAULTS[slot], (v) => { P.sound.slots[slot] = v; prefsChanged(); }, false);
+      const nm = h('span', { class: chips ? 'nm lvl' : 'nm' }, chips ? levelChip(fc ? lvl : k) : null, label, h('small', { class: 'ja', text: ja }));
+      // forecast rows above the first can borrow the row before them
+      const extra = fc && k > 0 ? [['same', `Same as ${list[k - 1][1].replace(/^Forecast /, '')}`]] : [];
+      const sel = soundSel(() => P.sound.slots[slot] || SOUND_DEFAULTS[slot], (v) => { P.sound.slots[slot] = v; prefsChanged(); }, false, extra);
       dropSound(nm, assign); dropSound(sel, assign);
       grid.append(nm, sel,
         cRange(() => P.sound.slotVol[slot] ?? 1, (v) => { P.sound.slotVol[slot] = v; prefsChanged(); }, { min: 0, max: 1.5, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' }),
@@ -8183,11 +8574,29 @@ function buildSoundSettings() {
     });
     return grid;
   };
-  root.append(slotGrid(SOUND_SLOTS, false));
+  root.append(slotGrid(SOUND_SLOTS, false, false));
   root.append(h('div', { class: 'row' },
     cChk(() => P.sound.rumble, prefSet(P.sound, 'rumble'), 'Low rumble while it shakes at your location'),
     h('span', { style: 'flex:1' }),
     btn('Reset all to defaults', () => { P.sound.slots = { ...SOUND_DEFAULTS }; P.sound.slotVol = {}; prefsChanged(); buildSoundSettings(); toast('Alert sounds reset.', 1600); }, 'btn sm ghost')));
+  // forecast shindo: the EEW's predicted max picks the sound
+  root.append(h('h3', { class: 'set-h', text: 'Forecast shindo' }));
+  root.append(h('div', { class: 'row' },
+    cChk(() => !!P.sound.fcOn, prefSet(P.sound, 'fcOn', () => buildSoundSettings()), 'Pick the EEW sound by its forecast shindo'),
+    h('span', { style: 'flex:1' }),
+    fRow('Play it', cSel(() => P.sound.fcWhen || 'up', prefSet(P.sound, 'fcWhen'), [['up', 'On the first report and when the forecast goes up'], ['every', 'On every EEW report']]))));
+  root.append(h('p', { class: 'note', text: 'Optional. This listens to the EEW itself: the strongest shindo it forecasts, not what the stations measure (that’s Rising shindo below). Set one sound for 3 or lower and a different one from 5 Lower up, and “Same as” fills the rows in between. Worth knowing: JMA sends an EEW as a plain forecast (予報) until it expects 5 Lower somewhere, and that’s when it becomes a warning (警報). Quaker does the same, so 5 Lower is the natural spot for the scarier sound. A quake’s “Warn at” setting in Advanced can move that line.' }));
+  const fg2 = slotGrid(FC_SLOTS, true, true);
+  if (!P.sound.fcOn) fg2.classList.add('off');
+  root.append(fg2);
+  root.append(h('div', { class: 'row' },
+    fRow('Regular EEW chimes', cSel(() => P.sound.fcMix || 'replace', prefSet(P.sound, 'fcMix'), [['replace', 'Swap them out for these'], ['both', 'Play both']])),
+    h('span', { style: 'flex:1' }),
+    btn('▶ Play 3 → 5 Lower → 7', () => { AU.ensure(); ['fc3', 'fc5l', 'fc7'].forEach((k, i) => setTimeout(() => AU.playSlot(k), i * 1900)); }),
+    btn('Reset forecast sounds', () => {
+      for (const [slot] of FC_SLOTS) { P.sound.slots[slot] = SOUND_DEFAULTS[slot]; delete P.sound.slotVol[slot]; }
+      prefsChanged(); buildSoundSettings(); toast('Forecast sounds reset.', 1600);
+    }, 'btn sm ghost')));
   // rising shindo
   root.append(h('h3', { class: 'set-h', text: 'Rising shindo' }));
   root.append(h('div', { class: 'row' },
@@ -8195,7 +8604,7 @@ function buildSoundSettings() {
     h('span', { style: 'flex:1' }),
     fRow('Follow', cSel(() => P.sound.levelSrc || 'net', prefSet(P.sound, 'levelSrc'), [['net', 'Strongest shaking on the map'], ['my', 'Shaking at your location']]))));
   root.append(h('p', { class: 'note', text: 'Each level from 0 to 7 gets its own sound. When the shaking jumps several levels at once, only the highest one plays. On the map it keeps time with the station dots. “Your location” needs a spot from Set my location, and follows the map until you set one.' }));
-  const lg = slotGrid(LEVEL_SLOTS, true);
+  const lg = slotGrid(LEVEL_SLOTS, true, false);
   if (P.sound.levelOn === false) lg.classList.add('off');
   root.append(lg);
   let climb = [];
@@ -8213,7 +8622,7 @@ function buildSoundSettings() {
   // files
   const files = h('div', { class: 'list' });
   for (const f of AU.files) {
-    const uses = [...SOUND_SLOTS, ...LEVEL_SLOTS].filter(([k]) => P.sound.slots[k] === 'f:' + f.id).map(([, l]) => l);
+    const uses = [...SOUND_SLOTS, ...FC_SLOTS, ...LEVEL_SLOTS].filter(([k]) => P.sound.slots[k] === 'f:' + f.id).map(([, l]) => l);
     files.append(h('div', { class: 'li' },
       h('div', {}, h('div', { text: f.name }), h('div', { class: 'sub', text: (f.bad ? 'Couldn’t decode' : f.dur ? f.dur.toFixed(1) + ' s' : '') + (uses.length ? ' · used for ' + uses.join(', ') : '') })),
       h('div', { class: 'row' },
@@ -8326,6 +8735,11 @@ function bindKeys() {
     else if (k === 'Home') seek(T_START);
     else if (k === 'End') seek(S.world.tEnd);
     else if (k === 'j' || k === 'J') seek(reportTime());
+    else if (k === '.' || k === '>') jumpMoment(1);
+    else if (k === ',' || k === '<') jumpMoment(-1);
+    else if (k === 'o' || k === 'O') setLoop(!S.loop);
+    else if (k === 'p' || k === 'P') saveFrame();
+    else if ((k === 'i' || k === 'I') && S.doc && S.doc.intro && S.doc.intro.on) previewIntro();
     else if (k === 'f' || k === 'F') toggleFullscreen();
     else if (k === 'm' || k === 'M') $('#btnSound').click();
     else if (k === 'c' || k === 'C') setFollow(!S.follow);
@@ -8379,15 +8793,17 @@ async function boot() {
   let st = loadJSON('quaker.v2.state');
   if (!st) { const m = migrateV1(); if (m) st = { easy: m.easy, view: m.view, mode: 'easy' }; }
   if (st) {
-    if (st.easy && isFinite(+st.easy.lat)) { S.easy = { ...defaultEasy(), ...st.easy }; S.easy.extras = { ...EXTRAS_DEFAULT, ...(st.easy.extras || {}) }; S.easy.clock = { mode: 'now', start: '', tz: 'auto', ...(st.easy.clock || {}) }; }
+    if (st.easy && isFinite(+st.easy.lat)) { S.easy = { ...defaultEasy(), ...st.easy }; S.easy.extras = { ...EXTRAS_DEFAULT, ...(st.easy.extras || {}) }; S.easy.clock = { mode: 'now', start: '', tz: 'auto', ...(st.easy.clock || {}) }; S.easy.intro = normIntro(st.easy.intro); }
     if (st.adv && typeof st.adv === 'object') { try { S.adv = normalizeDoc(st.adv); } catch (e) { S.adv = null; } }
     if (typeof st.speed === 'number') S.speed = st.speed;
     if (typeof st.follow === 'boolean') S.follow = st.follow;
+    S.loop = st.loop === true;
   }
   // the open project: the one the saved state belongs to, or a fresh one wrapped around it
   S.proj = st && st.proj && st.proj.id ? { ...projMeta(st.proj), name: st.proj.name || '' } : { id: newId('p'), name: '', created: Date.now(), updated: Date.now(), src: '', pristine: false };
   for (const r of $$('input[name=speed]')) r.checked = +r.value === S.speed;
   $('#btnCam').setAttribute('aria-pressed', String(S.follow));
+  $('#btnLoop').setAttribute('aria-pressed', String(S.loop));
   R.camHold = !S.follow;
   const mode = st && st.mode === 'adv' && S.adv ? 'adv' : 'easy';
   S.ready = true;
@@ -8403,7 +8819,8 @@ async function boot() {
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles,
-      projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt },
+      projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
+      previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop },
   };
 }
 boot();
