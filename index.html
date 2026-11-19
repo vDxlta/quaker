@@ -6414,6 +6414,7 @@ function edToggleTrack(k) {
   ED.collapse[k] = !ED.collapse[k];
   try { localStorage.setItem('quaker.v2.tlcollapse', JSON.stringify(ED.collapse)); } catch (e) { /* storage off */ }
   edRender();
+  syncTouchUi();
 }
 // a free box was dragged around on the stage
 function edAfterDrag() { edInspector(); }
@@ -7137,7 +7138,7 @@ function edTips(show, save) {
   el.hidden = !show;
   const b = $('#btnTips');
   if (b) b.setAttribute('aria-pressed', String(!!show));
-  if (save) try { localStorage.setItem('quaker.v2.tltip', show ? 'on' : 'off'); } catch (e) { /* storage off */ }
+  if (save) { try { localStorage.setItem('quaker.v2.tltip', show ? 'on' : 'off'); } catch (e) { /* storage off */ } syncTouchUi(); }
 }
 
 // ---------------------------------------------------------------- inspector
@@ -7586,14 +7587,15 @@ function edInit() {
 //    sound and font files, reached with a token you paste once per device
 //  - Claude sync (when Quaker is open as a Claude artifact): your private space in the artifact's store
 //  - a backup file, anywhere
-// What travels: settings, projects you've worked on (untouched preloaded quakes stay put), imported sounds and fonts.
+// What travels: settings, the player and timeline setup (speed, camera follow, loop, folded tracks, tips), projects
+// you've worked on (untouched preloaded quakes stay put), imported sounds and fonts.
 //
 // Both syncs keep one document per thing. Each device remembers the version of every document it last agreed with
 // (the ledger), so it can tell "changed over there" from "changed here". When both changed, the newer edit wins, and
 // an edit always beats a deletion, so nothing you touched disappears. Every write bumps a revision number, so a
 // late, stale read can never roll a newer version back.
 const SY = {
-  cfg: { on: true, files: true, bakFiles: true, uid: '', pa: 0, L: {}, gh: null },
+  cfg: { on: true, files: true, bakFiles: true, uid: '', pa: 0, ua: 0, L: {}, gh: null },
   st: null, status: 'off', msg: '', at: 0, ready: false, wait: 0, timer: 0, chain: Promise.resolve(), backoff: 0,
   remote: new Map(), chunks: new Map(), skip: new Map(), sigs: new WeakMap(),
   chunkSize: 60000,
@@ -7606,11 +7608,39 @@ function syncCfgLoad() {
   const c = loadJSON('quaker.v2.sync');
   if (c && typeof c === 'object') {
     const gh = c.gh && typeof c.gh === 'object' && typeof c.gh.token === 'string' && c.gh.token ? c.gh : null;
-    SY.cfg = { on: c.on !== false, files: c.files !== false, bakFiles: c.bakFiles !== false, uid: String(c.uid || ''), pa: +c.pa || 0, L: c.L && typeof c.L === 'object' ? c.L : {}, gh };
+    SY.cfg = { on: c.on !== false, files: c.files !== false, bakFiles: c.bakFiles !== false, uid: String(c.uid || ''), pa: +c.pa || 0, ua: +c.ua || 0, L: c.L && typeof c.L === 'object' ? c.L : {}, gh };
   }
 }
 function syncCfgSave() { try { localStorage.setItem('quaker.v2.sync', JSON.stringify(SY.cfg)); } catch (e) { /* storage off */ } }
 function syncTouchPrefs() { SY.cfg.pa = Date.now(); syncSoon(); }
+function syncTouchUi() { SY.cfg.ua = Date.now(); syncCfgSave(); syncSoon(); }
+// the player and timeline setup that lives outside the Settings dialog
+function uiState() {
+  let tip = null;
+  try { tip = localStorage.getItem('quaker.v2.tltip'); } catch (e) { /* storage off */ }
+  const fold = {};
+  for (const [k, v] of Object.entries(ED.collapse || {})) if (v) fold[k] = true;
+  return { speed: S.speed, follow: !!S.follow, loop: !!S.loop, fold, tips: tip !== 'off' };
+}
+function applyUiState(u) {
+  if (!u || typeof u !== 'object') return;
+  if ($$('input[name=speed]').some((r) => +r.value === +u.speed)) { S.speed = +u.speed; for (const r of $$('input[name=speed]')) r.checked = +r.value === S.speed; }
+  if (typeof u.follow === 'boolean' && u.follow !== S.follow) {
+    S.follow = u.follow; R.camHold = !u.follow;
+    if (u.follow && S.state !== 'idle') R.camFrom = { view: { ...R.fv }, tau: S.tau };
+    $('#btnCam').setAttribute('aria-pressed', String(u.follow));
+  }
+  if (typeof u.loop === 'boolean') { S.loop = u.loop; $('#btnLoop').setAttribute('aria-pressed', String(S.loop)); }
+  if (u.fold && typeof u.fold === 'object') {
+    ED.collapse = {};
+    for (const [k, v] of Object.entries(u.fold)) if (v === true) ED.collapse[k] = true;
+    try { localStorage.setItem('quaker.v2.tlcollapse', JSON.stringify(ED.collapse)); } catch (e) { /* storage off */ }
+    if (S.mode === 'adv') edRender();
+  }
+  if (typeof u.tips === 'boolean') { try { localStorage.setItem('quaker.v2.tltip', u.tips ? 'on' : 'off'); } catch (e) { /* storage off */ } edTips(u.tips); }
+  needRender = true;
+  saveState();
+}
 
 // ---------------------------------------------------------------- bytes
 function bufToB64(buf) {
@@ -7639,6 +7669,7 @@ const fontSig = (f) => 'f' + f.raw.byteLength + ':' + f.family + ':' + f.weight 
 function localItems() {
   const m = new Map();
   m.set('prefs', { kind: 'prefs', sig: syncSig(S.prefs), t: SY.cfg.pa || 0 });
+  m.set('ui', { kind: 'ui', sig: syncSig(uiState()), t: SY.cfg.ua || 0 });
   for (const p of PJ.list) {
     if (!p || !okId(p.id) || p.pristine) continue;   // untouched preloaded quakes don't travel
     let sig = SY.sigs.get(p);
@@ -7943,11 +7974,11 @@ async function syncReconcile() {
   const local = localItems(), L = SY.cfg.L, L0 = { ...L }, pushed = [];
   const fresh = !Object.keys(L).length;            // this device has never synced: what's in the cloud wins for settings
   const ids = new Set([...local.keys(), ...SY.remote.keys(), ...Object.keys(L)]);
-  const got = { prefs: 0, p: 0, s: 0, f: 0, del: 0 };
+  const got = { prefs: 0, ui: 0, p: 0, s: 0, f: 0, del: 0 };
   let trouble = null;
   for (const id of ids) {
-    const kind = id === 'prefs' ? 'prefs' : id[0];
-    if (!['prefs', 'p', 's', 'f'].includes(kind) || (kind !== 'prefs' && id[1] !== '-')) continue;
+    const kind = id === 'prefs' || id === 'ui' ? id : id[0];
+    if (!['prefs', 'ui', 'p', 's', 'f'].includes(kind) || (kind.length === 1 && id[1] !== '-')) continue;
     if (!SY.cfg.files && (kind === 's' || kind === 'f')) continue;
     if (SY.skip.has(id)) continue;
     const r = SY.remote.get(id), l = local.get(id), g = L[id];
@@ -7964,7 +7995,7 @@ async function syncReconcile() {
     if (remoteChanged && localChanged) {
       if (!l) act = 'pull';                           // gone here, edited there: bring it back
       else if (rSig === 'DEL') act = 'push';          // edited here, gone there: keep it
-      else if (kind === 'prefs' && fresh) act = 'pull';
+      else if ((kind === 'prefs' || kind === 'ui') && fresh) act = 'pull';
       else act = (l.t || 0) > (+r.mt || 0) ? 'push' : 'pull';
     } else if (remoteChanged) act = 'pull';
     else if (localChanged) act = 'push';
@@ -7990,7 +8021,7 @@ async function syncReconcile() {
   syncUI();
 }
 function syncAfterPull(got) {
-  const n = got.prefs + got.p + got.s + got.f + got.del;
+  const n = got.prefs + got.ui + got.p + got.s + got.f + got.del;
   if (!n) return;
   if (got.p || got.del) { if ($('#dlgLibrary') && $('#dlgLibrary').open) renderProjects(); projChipUI(); }
   if (got.f || got.del) { fontsSig = ''; applyFonts(); }
@@ -8004,7 +8035,7 @@ function syncAfterPull(got) {
   if (got.p) bits.push(got.p === 1 ? '1 project' : got.p + ' projects');
   if (got.s) bits.push(got.s === 1 ? '1 sound' : got.s + ' sounds');
   if (got.f) bits.push(got.f === 1 ? '1 font' : got.f + ' fonts');
-  if (got.prefs) bits.push('your settings');
+  if (got.prefs || got.ui) bits.push('your settings');
   if (bits.length) toast('Synced from your other device: ' + (bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0]) + '.', 2600);
 }
 
@@ -8021,6 +8052,7 @@ async function syncPush(id, kind, l, r) {
   }
   let body;
   if (kind === 'prefs') body = { k: kind, sig: l.sig, v, mt, n, json: JSON.stringify(S.prefs) };
+  else if (kind === 'ui') body = { k: kind, sig: l.sig, v, mt, n, json: JSON.stringify(uiState()) };
   else if (kind === 'p') {
     const pid = id.slice(2), json = JSON.stringify(l.rec), cs = SY.chunkSize;
     body = { k: kind, sig: l.sig, v, mt, n, name: String(l.rec.name || '').slice(0, 80) };
@@ -8076,6 +8108,12 @@ async function syncPull(id, kind, r, l) {
     replacePrefs(np);
     SY.cfg.pa = +r.mt || Date.now();
     L[id] = { sig: syncSig(S.prefs), v: r.v, n };
+    return true;
+  }
+  if (kind === 'ui') {
+    applyUiState(JSON.parse(r.json));
+    SY.cfg.ua = +r.mt || Date.now();
+    L[id] = { sig: syncSig(uiState()), v: r.v, n };
     return true;
   }
   if (kind === 'p') {
@@ -8166,7 +8204,7 @@ async function exportBackup(withFiles) {
   if (!dl) { toast('Saving files isn’t available in this view.'); return false; }
   const o = {
     quakerBackup: 1, app: 'Quaker v2', savedAt: new Date().toISOString(),
-    prefs: S.prefs, prefsAt: SY.cfg.pa || 0,
+    prefs: S.prefs, prefsAt: SY.cfg.pa || 0, ui: uiState(),
     projects: PJ.list.filter((p) => p && okId(p.id) && !p.pristine),
     sounds: [], fonts: [],
   };
@@ -8196,6 +8234,7 @@ async function importBackupFile(file) {
 async function importBackup(o) {
   const n = { p: 0, s: 0, f: 0, prefs: false };
   if (o.prefs && typeof o.prefs === 'object') { replacePrefs(o.prefs); SY.cfg.pa = Date.now(); n.prefs = true; }
+  if (o.ui && typeof o.ui === 'object') { applyUiState(o.ui); SY.cfg.ua = Date.now(); n.prefs = true; }
   for (const rec of Array.isArray(o.projects) ? o.projects : []) {
     if (!rec || !okId(rec.id)) continue;
     const cur = PJ.list.find((p) => p.id === rec.id);
@@ -8301,7 +8340,7 @@ function buildSyncSettings() {
     toast(where === 'github' ? 'Deleted the sync gists and unlinked this device. Everything on this device stays.' : 'Deleted the cloud copy and turned sync off here. Everything on this device stays.', 3200);
     buildSyncSettings();
   } });
-  const what = 'Your settings, the projects you’ve worked on, and your imported sounds and fonts follow you to your other devices. Untouched preloaded quakes stay put. When the same thing changed on two devices, the newer change wins, and an edit always beats a delete.';
+  const what = 'All your settings (plus playback speed, camera follow, loop and how your timeline is set up), the projects you’ve worked on, and your imported sounds and fonts follow you to your other devices. Untouched preloaded quakes stay put. When the same thing changed on two devices, the newer change wins, and an edit always beats a delete.';
   const syncBox = h('div', { class: 'fg' }, h('div', { class: 'gt', text: where === 'github' ? 'Sync through GitHub' : 'Automatic sync' }), status);
   if (where === 'github' && !c.gh) {
     // the one-time setup on each device
@@ -8819,6 +8858,7 @@ function setFollow(on) {
   $('#btnCam').setAttribute('aria-pressed', String(on));
   needRender = true;
   saveStateSoon();
+  syncTouchUi();
 }
 function fireSounds(prev, cur) {
   if (S.speed > 4) return;
@@ -9193,7 +9233,7 @@ function bindTransport() {
   $('#btnRestart').addEventListener('click', () => { if (!S.recording) startPlayback(true); });
   $('#btnReport').addEventListener('click', () => { if (!S.recording && S.world) seek(reportTime()); });
   $('#timeline').addEventListener('input', (e) => seek(+e.target.value));
-  for (const r of $$('input[name=speed]')) r.addEventListener('change', () => { S.speed = +r.value; saveStateSoon(); });
+  for (const r of $$('input[name=speed]')) r.addEventListener('change', () => { S.speed = +r.value; saveStateSoon(); syncTouchUi(); });
   $('#btnSound').addEventListener('click', () => { S.prefs.sound.on = !S.prefs.sound.on; AU.ensure(); prefsChanged(); });
   $('#volume').addEventListener('input', (e) => { S.prefs.sound.vol = +e.target.value; AU.ensure(); prefsChanged(); });
   $('#btnFull').addEventListener('click', toggleFullscreen);
@@ -9476,6 +9516,7 @@ function setLoop(on) {
   $('#btnLoop').setAttribute('aria-pressed', String(S.loop));
   toast(S.loop ? 'Loop on: it starts over when it ends.' : 'Loop off.', 1400);
   saveStateSoon();
+  syncTouchUi();
 }
 // a still of the current moment as a 1920×1080 PNG
 async function saveFrame() {
