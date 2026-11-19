@@ -4200,10 +4200,10 @@ function drawWaves(c, srcs, v, alpha, fillOnly) {
     c.restore();
   }
 }
-// ---------------------------------------------------------------- before the first EEW (light green, both optional)
-// 1) detection boxes: a box around every station that has felt it so far, the rawest guess at where it is
+// ---------------------------------------------------------------- before the first EEW (light green, both optional, one at a time)
+// 1) detection box: a box around every station that has felt it so far, the rawest guess at where it is
 // 2) rough estimate: once a handful of stations have it, P and S circles from a first guess that settles
-//    toward the real spot each second, until the first EEW takes over
+//    toward the real spot each second, until the first EEW takes over. The box hands off to the circles.
 const PRE = [150, 236, 140];
 // stations in the order they trip, with running bounds so a box for any moment is one lookup
 function preOrder(DB, ph) {
@@ -4241,7 +4241,7 @@ function preState(env, ee) {
   const lt = (mp.tick !== false ? Math.floor(env.tau) : env.tau) - E.ev.t0;
   const m = preCount(o, Math.max(lt, ph.tDet));
   const out = { fade, E, box: null, est: null };
-  if (mp.preBox !== false && m >= 2) out.box = { x0: o.x0[m - 1], x1: o.x1[m - 1], y0: o.y0[m - 1], y1: o.y1[m - 1] };
+  if (mp.preBox !== false && m >= 2) out.box = { x0: o.x0[m - 1], x1: o.x1[m - 1], y0: o.y0[m - 1], y1: o.y1[m - 1], a: 1 };
   // the estimate needs five stations and a moment to work it out, and is skipped when the EEW beats it
   const tEst = Math.max(ph.tDet + 0.8, (o.n >= 5 ? o.t[4] : Infinity) + 0.5);
   if (mp.preEst !== false && first !== null && ee.lt >= tEst && tEst < first - 0.3) {
@@ -4254,12 +4254,13 @@ function preState(env, ee) {
     const wx = sw ? lerp(sx / sw, tx, conv) : tx, wy = sw ? lerp(sy / sw, ty, conv) : ty;
     const ll = { lon: n180(lonOf(wx)), lat: latOf(wy) };
     out.est = { lat: ll.lat, lon: ll.lon, depth: 10, lt: ee.lt - (1 - conv) * 0.9, kind: 'pre', since: ee.lt - tEst };
+    // the circles replace the box: a quick crossfade, never both on screen
+    if (out.box) { out.box.a = 1 - clamp(out.est.since / 0.35, 0, 1); if (out.box.a <= 0) out.box = null; }
   }
   return out;
 }
 function drawPre(c, env, v, alpha, layer) {
   if (env.idle) return;
-  const en = UI_LANG === 'en';
   for (const ee of env.scene.events) {
     const st = preState(env, ee);
     if (!st) continue;
@@ -4276,7 +4277,7 @@ function drawPre(c, env, v, alpha, layer) {
       if (x1 - x0 < 26) { const m = (x0 + x1) / 2; x0 = m - 13; x1 = m + 13; }
       if (y1 - y0 < 26) { const m = (y0 + y1) / 2; y0 = m - 13; y1 = m + 13; }
       c.save();
-      c.globalAlpha = a;
+      c.globalAlpha = a * st.box.a;
       c.fillStyle = rgbStr(PRE, 0.1); c.fillRect(x0, y0, x1 - x0, y1 - y0);
       c.strokeStyle = rgbStr(PRE, 0.95); c.lineWidth = 2.2; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
       // corner ticks, like a detection frame
@@ -4284,7 +4285,6 @@ function drawPre(c, env, v, alpha, layer) {
       const k = Math.min(14, (x1 - x0) / 3, (y1 - y0) / 3);
       for (const [cx, cy, dx, dy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]) { c.moveTo(cx + dx * k, cy); c.lineTo(cx, cy); c.lineTo(cx, cy + dy * k); }
       c.stroke();
-      txt(c, en ? 'SHAKING DETECTED' : '揺れ検知  DETECTED', x0, y0 - 9, fnt(700, 16, en ? FONT_UI : FONT_JP), rgbStr(PRE, 1), 'left', 'rgba(5,9,15,0.9)', 4);
       c.restore();
     }
     if (st.est) {
@@ -4299,7 +4299,6 @@ function drawPre(c, env, v, alpha, layer) {
       if (s > 0) { c.strokeStyle = rgbStr(PRE, 0.95 * ca); c.lineWidth = 2.8; c.stroke(circlePath(src.lat, src.lon, s, v)); }
       const ep = lonLatToScreen(src.lon, src.lat, v);
       drawX(c, ep.x, ep.y, ca * (env.prefs.reduced || src.since % 1 < 0.7 ? 1 : 0.35), 9, '#7BD66E');
-      txt(c, en ? 'ROUGH ESTIMATE' : '推定  ROUGH ESTIMATE', ep.x + 15, ep.y - 13, fnt(700, 16, en ? FONT_UI : FONT_JP), rgbStr(PRE, ca), 'left', 'rgba(5,9,15,0.9)', 4);
       c.restore();
     }
   }
@@ -8969,8 +8968,8 @@ function buildSettings() {
       cChk(() => P.map.stations, prefSet(P.map, 'stations'), 'Show station dots'),
       cChk(() => P.map.fills, prefSet(P.map, 'fills'), 'Shade forecast intensity during warnings'),
       cChk(() => P.map.labels, prefSet(P.map, 'labels'), 'City and region labels'),
-      cChk(() => P.map.preBox, prefSet(P.map, 'preBox'), 'Detection boxes before the EEW', 'Light green boxes around the stations that have felt it: the rawest guess at where it is.'),
-      cChk(() => P.map.preEst, prefSet(P.map, 'preEst'), 'Rough estimate circles before the EEW', 'Once a few stations have it, light green P and S circles from a first guess that settles each second, until the first EEW takes over.'),
+      cChk(() => P.map.preBox, prefSet(P.map, 'preBox'), 'Detection box before the EEW', 'A light green box around the stations that have felt it: the rawest guess at where it is. It hands off to the circles once they’re ready.'),
+      cChk(() => P.map.preEst, prefSet(P.map, 'preEst'), 'Rough estimate circles before the EEW', 'Once a few stations have it, light green P and S circles take over from the box and settle each second until the first EEW.'),
       cChk(() => P.map.truth, prefSet(P.map, 'truth'), 'Show the true wavefront before the first EEW')),
     h('div', { class: 'list' },
       cChk(() => P.map.clock, prefSet(P.map, 'clock'), 'Clock and station counter panel'),
