@@ -14,9 +14,12 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - Camera: the auto camera keeps every quake that's going in frame by default (toggle it to follow just the newest), plus keyframes or a free map
 - Boxes stack by importance (EEW on top, then the S-wave arrival, then the reports), and a second quake's EEW tucks in as a slim strip. When a side fills up it stays one column: the top box stays pinned and the rest cycle through underneath, or you scroll it yourself
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
+- Real replays use JMA's actual EEW reports for 15 quakes from 2011 on (from JMA's published record), including PLUM-only reports and Noto 2024's M5.9 that came 13 s before the main shock. Imported JMA or P2PQuake reports bend the station dots to match each town's real reading, and waves travel on JMA2001, the travel-time table JMA itself uses
 - Video recording, frame pictures, share codes and project files
 - Your stuff on every device: settings, projects, sounds and fonts sync automatically through two secret gists on your GitHub account (paste a gist-only token once per device), or through your Claude account in the Claude version, and a backup file moves everything by hand
 - Custom sounds for every alert, a sound per forecast shindo (so the EEW can sound different once it's a warning), and a different sound for each shindo level as the measured shaking climbs
 - Custom fonts for the on-screen graphics: pick Google Fonts, a font installed on your computer, or import your own TTF, OTF, WOFF or WOFF2 files, separately for Japanese text, English text and numbers, each with its own size
 
-Everything runs in the browser from one `index.html`. Station data, intensities and EEW reports are simulated, not real-time data.
+Everything runs in the browser from one `index.html`. Nothing is real-time data: stations and shaking are simulated, and real replays combine the real facts (hypocenter, report, JMA's EEW reports where available) with that simulation.
+
+Travel times: JMA2001 (Ueno et al., 2002), distributed by the Japan Meteorological Agency. EEW records: JMA, 緊急地震速報（警報）の発表状況.
