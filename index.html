@@ -2338,7 +2338,7 @@ function normalizeDoc(d) {
   }));
   doc.camera = { mode: 'auto', start: null, keys: [], ...(doc.camera || {}) };
   doc.camera.keys = (Array.isArray(doc.camera.keys) ? doc.camera.keys : []).map((k) => ({
-    id: k.id || newId('c'), t: num(k.t, 0), target: ['epicenter', 'fit', 'report', 'custom', 'follow'].includes(k.target) ? k.target : 'custom',
+    id: k.id || newId('c'), t: num(k.t, 0), target: ['epicenter', 'fit', 'report', 'custom', 'follow', 'all'].includes(k.target) ? k.target : 'custom',
     ev: k.ev || doc.events[0].id, lat: num(k.lat, 38), lon: num(k.lon, -77), r: clamp(num(k.r, 300), 10, 6000), dur: clamp(num(k.dur, 1.6), 0, 30), ease: k.ease || 'default',
   }));
   doc.cues = (Array.isArray(doc.cues) ? doc.cues : []).map((c) => ({ id: c.id || newId('s'), t: num(c.t, 0), sound: String(c.sound || 'ping'), vol: clamp(num(c.vol, 1), 0, 2) }));
@@ -4092,9 +4092,72 @@ function autoCam(env, lay) {
   }
   return cam;
 }
+// "Follow every quake": each quake gets the framing it would get on its own (the detection zoom and its steps
+// out, or the stepped follow), and the camera fits all the ones that are going. A quake eases in when it's
+// detected and eases out once its waves have crossed its own framing and its EEW is done; with nothing going it
+// rests on everything that has happened so far, then frames the report as usual.
+function quakeDone(E) {
+  if (E._done !== undefined) return E._done;
+  const ph = E.ph;
+  let tS = 0;
+  for (let t = 0; t < 900; t += 0.5) if (sRadiusAt(ph, t) >= ph.fit) { tS = t; break; }
+  const last = E.reports.length ? E.reports[E.reports.length - 1].t - E.ev.t0 : 0;
+  E._done = Math.max(tS, last + 6, (ph.tDet ?? 0) + 15);
+  return E._done;
+}
+function boxCam(b, reg) {
+  const bw = Math.max(b[2] - b[0], 1e-6), bh = Math.max(b[3] - b[1], 1e-6);
+  const s = clamp(Math.min(((reg.y1 - reg.y0) * 0.88) / bh, ((reg.x1 - reg.x0) * 0.94) / bw), S_MIN, S_MAX);
+  return { fx: (b[0] + b[2]) / 2, fy: (b[1] + b[3]) / 2, s, ax: (reg.x0 + reg.x1) / 2, ay: (reg.y0 + reg.y1) / 2 };
+}
+function fitAllCam(env, reg, withReport) {
+  const w = env.world, tau = env.tau;
+  const ease = easeFn(env.prefs.anim.ease), P = camPrefs(env.prefs), cease = easeFn(P.ease, 'expoOut');
+  const live = [], seen = [], pins = [];
+  for (const E of w.evs) {
+    if (!E.ph.shaking && E !== w.main) continue;
+    const lt = tau - E.ev.t0;
+    const tIn = E.ph.tDet ?? (E.reports[0] ? E.reports[0].t - E.ev.t0 : 3);
+    if (lt < tIn) continue;
+    let x, y, r;
+    if (P.detectZoom && E.ph.tDet !== null) { x = wxOf(n360(E.ph.lon)); y = wyOf(E.ph.lat); r = detectRadius(E, lt, P, cease); }
+    else { const f = focusOf(w.DB, E, false); x = wxOf(n360(f.lon)); y = wyOf(f.lat); r = Math.max(followRadius(E, lt, ease), f.off * 1.3 + 60); }
+    const k = kmPerWU(E.ph.lat);
+    const ru = r / k, rf = Math.max(E.ph.fit, r) / k, rp = 140 / k;
+    const ex = wxOf(n360(E.ph.lon)), ey = wyOf(E.ph.lat);
+    // glides in over two seconds once detected, out over 2.5 s once it's done (no overshoot: it's a camera)
+    const glide = (u) => 0.5 - 0.5 * Math.cos(Math.PI * clamp(u, 0, 1));
+    const a = Math.min(glide((lt - tIn) / 2), 1 - glide((lt - quakeDone(E)) / 2.5));
+    if (a > 0.001) live.push({ b: [x - ru, y - ru, x + ru, y + ru], a, t: tIn + E.ev.t0 });
+    seen.push([x - rf, y - rf, x + rf, y + rf]);
+    pins.push([ex - rp, ey - rp, ex + rp, ey + rp]);
+  }
+  const union = (p, q) => [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[2], q[2]), Math.max(p[3], q[3])];
+  // resting frame: everything that has happened, or the viewer's own framing before anything has
+  const rest = seen.length ? boxCam(seen.reduce(union), reg) : camFromView(R.view);
+  let cam = rest, m = 0;
+  if (live.length) {
+    // the quake that's most in, then each other one widening the frame as it eases in (zoom mixed on a log scale)
+    live.sort((p, q) => q.a - p.a || p.t - q.t);
+    let box = live[0].b, c = boxCam(box, reg);
+    for (let i = 1; i < live.length; i++) { box = union(box, live[i].b); c = mixCam(c, boxCam(box, reg), live[i].a); }
+    m = live[0].a;
+    cam = mixCam(rest, c, m);
+  }
+  if (!withReport) return cam;
+  // the report's framing, widened so every epicenter stays on screen
+  const sc = env.scene, rep = sc.map.report || sc.map.flash;
+  if (!rep || m >= 1) return cam;
+  const E = rep.E, f = focusOf(w.DB, E, true);
+  const r = Math.max(sc.map.report ? E.ph.fitReport : Math.max(E.ph.fitReport, E.ph.fit * 0.9), f.off * 1.2 + 80) / kmPerWU(f.lat);
+  const fx = wxOf(n360(f.lon)), fy = wyOf(f.lat);
+  const rb = pins.reduce(union, [fx - r, fy - r, fx + r, fy + r]);
+  return mixCam(cam, boxCam(rb, reg), (0.5 - 0.5 * Math.cos(Math.PI * clamp(rep.age / 1.7, 0, 1))) * (1 - m));
+}
 function keyTarget(env, k, reg) {
   const w = env.world, E = w.evMap.get(k.ev) || w.main;
   switch (k.target) {
+    case 'all': return fitAllCam(env, reg, false);
     case 'epicenter': return camOf(E.ph.lat, E.ph.lon, k.r, reg);
     case 'fit': { const f = focusOf(w.DB, E, false); return camOf(f.lat, f.lon, Math.max(E.ph.fit, f.off * 1.3 + 60), reg); }
     case 'report': { const f = focusOf(w.DB, E, true); return camOf(f.lat, f.lon, Math.max(E.ph.fitReport, f.off * 1.2 + 80), reg); }
@@ -4122,7 +4185,7 @@ function keysCam(env, lay) {
 function cameraAt(env, lay) {
   const mode = env.world.doc.camera.mode;
   if (mode === 'off') return null;
-  let cam = mode === 'keys' ? keysCam(env, lay) : autoCam(env, lay);
+  let cam = mode === 'keys' ? keysCam(env, lay) : mode === 'fit' ? fitAllCam(env, mapRegion(lay), true) : autoCam(env, lay);
   if (R.camFrom) {
     const t = (env.tau - R.camFrom.tau) / 1.6;
     if (t < 1) cam = mixCam(camFromView(R.camFrom.view), cam, easeFn(env.prefs.anim.ease)(clamp(t, 0, 1)));
@@ -5266,6 +5329,7 @@ function renderFrame(F) {
   // ---- boxes
   R.hits = drawBoxes(c, env, lay);
   R.cyc = lay.cyc || {};
+  R.lastLay = lay;
   drawVignette(c, env);
   if (card) {
     const r = drawCardOverlay(c, env, card);
@@ -6687,7 +6751,7 @@ function edRender() {
   if (!head('cam', d.camera.keys.length, d.camera.keys.map((k) => [k.t, k.dur, '#46A5FF']))) {
     const mode = d.camera.mode;
     const label = h('div', { class: 'tl-label', title: 'Camera mode: ⋯ on the Camera row, or the Scenario panel', onclick: () => edSelect(null) }, h('span', { class: 'dot', style: '--c:#46A5FF' }),
-      h('span', { class: 'nm', text: mode === 'keys' ? 'Keyframes' : mode === 'off' ? 'Off (free map)' : 'Auto camera' }));
+      h('span', { class: 'nm', text: mode === 'keys' ? 'Keyframes' : mode === 'off' ? 'Off (free map)' : mode === 'fit' ? 'Every quake' : 'Auto camera' }));
     const [row, lane] = laneRow('', label, laneW, false);
     lane.dataset.track = 'cam';
     if (!d.camera.keys.length) lane.append(h('div', { class: 'tl-empty', style: 'left:8px', text: mode === 'off' ? `The map stays where you put it. ${dblWord()} to add a camera key.` : `Follows the quake by itself. ${dblWord()} here to direct it with a camera key.` }));
@@ -7177,7 +7241,7 @@ function edTrackItems(k, t, evId) {
     items.push({ label: 'Add a camera key' + here, run: () => edAddCam(t) });
     items.push({ label: 'Select every key', disabled: !d.camera.keys.length, run: () => pick(d.camera.keys.map((x) => ({ kind: 'cam', id: x.id }))) });
     items.push({ head: 'Camera mode' });
-    for (const [m, lab] of [['auto', 'Auto (follows the quake)'], ['keys', 'Keyframes (this row)'], ['off', 'Off (free map)']]) items.push({ label: lab, check: d.camera.mode === m, run: () => edEdit(() => { d.camera.mode = m; }, { structural: true }) });
+    for (const [m, lab] of [['auto', 'Auto (follows the newest quake)'], ['fit', 'Follow every quake (fits them all)'], ['keys', 'Keyframes (this row)'], ['off', 'Off (free map)']]) items.push({ label: lab, check: d.camera.mode === m, run: () => edEdit(() => { d.camera.mode = m; }, { structural: true }) });
     items.push('-', { label: 'Remove every camera key', danger: true, disabled: !d.camera.keys.length, run: () => edEdit(() => { d.camera.keys = []; if (d.camera.mode === 'keys') d.camera.mode = 'auto'; S.sel = null; S.multi = []; }, { structural: true }) });
   } else if (k === 'cues') {
     items.push({ label: 'Add a sound cue' + here, run: () => edAddCue(t) });
@@ -7595,7 +7659,7 @@ function inspDoc() {
     fRow('Time zone', cSel(() => d.clock.tz, set(d.clock, 'tz'), TZ_OPTIONS))));
   const cam = d.camera;
   out.push(fg('Camera',
-    fRow('Mode', cSel(() => cam.mode, (v) => edEdit(() => { cam.mode = v; }, { structural: true }), [['auto', 'Auto (follows the quake)'], ['keys', 'Keyframes (Camera row)'], ['off', 'Off (free map)']])),
+    fRow('Mode', cSel(() => cam.mode, (v) => edEdit(() => { cam.mode = v; }, { structural: true }), [['auto', 'Auto (follows the newest quake)'], ['fit', 'Follow every quake (fits them all in view)'], ['keys', 'Keyframes (Camera row)'], ['off', 'Off (free map)']])),
     cam.mode !== 'off' ? cChk(() => S.prefs.cam.detectZoom, (v) => setDetectZoom(v, false), 'Detection zoom', 'Snap to the epicenter at first detection, then step out with the waves. A viewer setting (Settings → Camera), so it applies to every scenario.') : null,
     cam.mode === 'keys' ? fRow('Start view', h('div', { class: 'row' },
       h('span', { class: 'note', text: cam.start ? `${latLonStr(cam.start.lat, cam.start.lon)} · ${Math.round(cam.start.r)} km` : 'Auto' }),
@@ -7916,7 +7980,7 @@ function inspCam(k) {
   if (S.adv.camera.mode !== 'keys') out.push(h('div', { class: 'row' }, h('p', { class: 'note', text: 'Keys only drive the camera in Keyframes mode.' }), btn('Use keyframes', () => edEdit(() => { S.adv.camera.mode = 'keys'; }, { structural: true }))));
   out.push(fg('Move',
     fRow('At', cNum(() => k.t, set('t', { structural: true }), { step: 0.1, dec: 2 })),
-    fRow('Target', cSel(() => k.target, set('target', { structural: true }), [['epicenter', 'Epicenter at a set zoom'], ['fit', 'Fit the strong shaking'], ['report', 'Fit the whole report'], ['follow', 'Follow the waves'], ['custom', 'A fixed view']])),
+    fRow('Target', cSel(() => k.target, set('target', { structural: true }), [['epicenter', 'Epicenter at a set zoom'], ['fit', 'Fit the strong shaking'], ['report', 'Fit the whole report'], ['follow', 'Follow the waves'], ['all', 'Every quake that’s going'], ['custom', 'A fixed view']])),
     k.target !== 'custom' ? fRow('Quake', cSel(() => k.ev, set('ev'), evOptions(false))) : null,
     k.target === 'custom' ? h('div', { class: 'row' }, h('span', { class: 'note', text: latLonStr(k.lat, k.lon) }), btn('Use current view', () => edEdit(() => Object.assign(k, viewAsKey()), { structural: true })), pickBtn('Click the new center', (lat, lon) => edEdit(() => { k.lat = lat; k.lon = lon; }, { structural: true }))) : null,
     k.target === 'custom' || k.target === 'epicenter' ? fRow('Radius (km)', cNum(() => k.r, set('r'), { min: 10, max: 6000, step: 10 })) : null,
@@ -10662,7 +10726,7 @@ async function boot() {
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edSeqOpen, edBuildSequence, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
       previewIntro, setIntro: (k, v, st) => introSet(k, v, st), jumpMoment, keyMoments: () => keyMoments(S.world), saveFrame, setLoop,
-      SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile, syncLinkGitHub, syncUnlinkGitHub, GH },
+      lonLatToScreen, mapRegion: () => (R.lastLay ? mapRegion(R.lastLay) : null), SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile, syncLinkGitHub, syncUnlinkGitHub, GH },
   };
 }
 boot();
