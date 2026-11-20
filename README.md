@@ -11,7 +11,7 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - Before the first EEW: light green detection boxes around the stations that felt it, then rough-estimate P and S circles that settle until the EEW takes over
 - A realistic event sequence: S-wave arrival, EEW, intensity flash, epicenter info, the full report, then tsunami info, timed from the quake. Pick the steps in Easy mode, or build the run for any quake in Advanced
 - Intro screen, plus title cards you can drop anywhere on the timeline: the boxes slide off, the map blurs behind the card, then everything slides back
-- Camera modes: follow the newest quake, follow every quake (zooms out to keep them all in frame), keyframes, or a free map
+- Camera: the auto camera keeps every quake that's going in frame by default (toggle it to follow just the newest), plus keyframes or a free map
 - Boxes stack by importance (EEW on top, then the S-wave arrival, then the reports), and a second quake's EEW tucks in as a slim strip. When a side fills up it stays one column: the top box stays pinned and the rest cycle through underneath, or you scroll it yourself
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
 - Video recording, frame pictures, share codes and project files
