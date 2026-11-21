@@ -2182,6 +2182,7 @@ const REAL_QUAKES = REAL_QUAKES_RAW.map((r) => ({
 // Real EEW sequences from JMA's published record of every warning (速報値, data.jma.go.jp/eew/data/nc/pub_hist):
 // per quake: detection time and the warning reports by number, then [t, lat, lon, depth, M, max forecast (-1 none)]
 // for every report, t in seconds after the origin. M1.0 at 10 km is JMA's placeholder for a PLUM-only report.
+// noto2024f and noto2024a are the 16:06 M5.5 foreshock and the 16:18 M6.1 aftershock (used by the full Noto recreation).
 const REAL_EEW = {
   tohoku2011: { det: 22.1, warn: [4], r: [27.5,38.2,142.7,10,4.3,0,28.6,38.2,142.7,10,5.9,2,29.6,38.2,142.7,10,6.8,3,30.7,38.2,142.7,10,7.2,4,31.7,38.2,142.7,10,6.3,3,32.8,38.2,142.7,10,6.6,3,33.1,38.2,142.7,10,6.6,3,38,38.1,142.9,10,7.2,3,44.3,38.1,142.9,10,7.6,4,52.1,38.1,142.9,10,7.7,4,67.1,38.1,142.9,10,7.7,4,87.2,38.1,142.9,10,7.9,5,107.1,38.1,142.9,10,8,5,127.1,38.1,142.9,10,8.1,6,138.9,38.1,142.9,10,8.1,6] },
   kumamoto2016: { det: 4.7, warn: [1,4], r: [8.6,32.7,130.8,10,5.9,5,9.4,32.7,130.7,10,6.3,7,12.7,32.8,130.8,10,6.4,6,13.3,32.8,130.8,10,6.9,7,14.4,32.8,130.8,10,6.8,7,14.8,32.8,130.8,10,6.8,7,16.2,32.8,130.8,10,6.9,7,26.5,32.8,130.8,10,7.1,8,34.9,32.8,130.8,10,7.1,8,54.6,32.8,130.8,10,7.1,8,74.6,32.8,130.8,10,7.1,8,79.9,32.8,130.8,10,7.1,8] },
@@ -2198,6 +2199,8 @@ const REAL_EEW = {
   noto2024: { det: -12.5, warn: [1,20,30], pre: [-13,37.5067,137.23,10,5.9], r: [-6.5,37.5,137.2,10,5.5,5,-5.9,37.6,137.3,10,5.7,4,-5.6,37.5,137.2,10,5.7,5,-5,37.5,137.2,10,5.8,5,-4.3,37.5,137.2,10,5.9,6,-4.1,37.5,137.2,10,5.8,5,-2.9,37.6,137.3,10,6.1,5,-2.5,37.6,137.3,10,6.1,5,-2.2,37.6,137.3,10,6.3,6,-1.9,37.5,137.3,10,6.2,7,-1.3,37.5,137.3,10,6.3,7,0.1,37.5,137.3,10,6.5,7,1.1,37.5,137.3,10,6.6,8,1.7,37.6,137.2,10,6.6,7,7.6,37.5,137.2,10,6.5,8,8.5,37.5,137.2,10,6.2,8,8.8,37.5,137.2,10,6.5,8,11.7,37.5,137.2,10,6.6,8,17.8,37.5,137.2,10,6.6,8,20.6,37.5,137.2,10,6.6,8,22.1,37.5,137.2,10,6.6,8,23.6,37.5,137.2,10,6.6,8,25,37.5,137.2,10,6.6,8,26.5,37.5,137.2,10,6.6,8,27.5,37.6,137.2,10,7.2,8,27.6,37.6,137.2,10,7.2,8,28.1,37.6,137.2,10,7.2,8,31.2,37.6,137.2,10,7.4,8,31.5,37.6,137.2,10,7.4,8,44.6,37.6,137.2,10,7.4,8,50.6,37.6,137.2,10,7.4,8,58.1,37.6,137.2,10,7.4,8,61.1,37.6,137.2,10,7.4,8,75.6,37.6,137.2,10,7.4,8,80.6,37.6,137.2,10,7.4,8,90.3,37.6,137.2,10,7.4,8,97.6,37.6,137.2,10,7.4,8,99.2,37.6,137.2,10,7.4,8,115.1,37.6,137.2,10,7.4,8,129.1,37.6,137.2,10,7.4,8,148.6,37.6,137.2,10,7.4,8,168.6,37.6,137.2,10,7.4,8,188.5,37.6,137.2,10,7.4,8,208.5,37.6,137.2,10,7.4,8,228.6,37.6,137.2,10,7.4,8,236,37.6,137.2,10,7.4,8] },
   hyuganada2024: { det: 8.2, warn: [4], r: [11.3,31.9,131.4,10,1,2,12.9,31.7,131.8,30,5.6,3,13.3,31.8,131.6,40,5.5,3,13.9,31.8,131.7,20,7.2,7,14.5,31.8,131.7,20,7.2,7,15.9,31.8,131.7,20,7,6,17.3,31.8,131.7,30,7,6,18.2,31.8,131.7,30,6.9,6,18.3,31.8,131.7,30,6.9,6,18.9,31.8,131.6,20,6.8,6,19.8,31.8,131.6,20,6.8,6,19.9,31.8,131.6,30,6.7,6,20.4,31.7,131.7,30,6.9,6,20.8,31.7,131.7,30,6.9,6,21.5,31.8,131.6,20,7.2,8,22.3,31.8,131.6,30,7.2,7,23.3,31.8,131.7,30,7.2,7,23.8,31.8,131.7,30,6.9,6,24.9,31.8,131.7,20,6.9,6,26.3,31.7,131.8,30,7,6,27.2,31.7,131.7,30,7,6,28.8,31.8,131.7,20,6.9,6,29.1,31.8,131.7,30,6.9,6,30.3,31.7,131.8,20,7,6,30.8,31.8,131.7,30,6.9,6,31.1,31.8,131.6,30,6.9,6,31.9,31.7,131.7,30,7,6,33.6,31.7,131.8,20,7,6,33.9,31.8,131.6,30,6.9,6,34.2,31.8,131.7,30,6.9,6,35.3,31.7,131.8,30,7,6,38.3,31.7,131.7,30,7,6,38.3,31.7,131.7,30,7,6,39,31.8,131.7,30,6.9,6,39.9,31.7,131.7,30,7,6,40.3,31.7,131.8,30,7,6,41.1,31.7,131.7,30,7,6,42.3,31.7,131.8,30,7,6,43,31.7,131.8,30,7.1,6,43.4,31.8,131.7,30,6.9,6,44,31.7,131.8,30,7,6,44.4,31.7,131.7,30,7,6,45,31.7,131.8,30,7.1,6,46,31.7,131.7,30,7,6,47,31.7,131.7,20,7.1,6,48,31.8,131.7,30,6.9,6,48.7,31.7,131.8,30,7,6,50.4,31.7,131.7,30,7,6,51.8,31.8,131.7,30,6.9,6,52.5,31.7,131.7,30,7,6,53.2,31.7,131.8,30,7,6,55.2,31.7,131.7,30,7,6,55.8,31.7,131.8,30,7,6,56.1,31.7,131.7,30,7,6,59,31.8,131.7,30,6.9,6,61.2,31.7,131.7,30,7,6,62.1,31.8,131.7,30,6.9,6,69.1,31.7,131.8,30,7,6,75.7,31.8,131.7,30,6.9,6,95.5,31.8,131.7,30,6.9,6,115.5,31.8,131.7,30,6.9,6,135.6,31.8,131.7,30,6.9,6,155.5,31.8,131.7,30,6.9,6,175.5,31.8,131.7,30,6.9,6,176.3,31.8,131.7,30,6.9,6] },
   noto2023: { det: 2.8, warn: [7], r: [5.9,37.4,137.4,10,1,-1,6.9,37.4,137.4,10,1,-1,6.9,37.5,137.3,10,5.7,-1,7.8,37.5,137.3,10,5.7,-1,7.9,37.5,137.3,10,6.3,-1,9,37.5,137.2,10,6.9,-1,10.1,37.4,137.2,10,7,7,12.5,37.5,137.3,10,6.9,7,12.9,37.5,137.3,10,6.9,7,13.3,37.6,137.3,10,7,8,15.5,37.6,137.3,20,7,7,16.8,37.6,137.3,10,7,8,18.3,37.6,137.3,10,6.8,7,20.3,37.6,137.3,10,6.9,8,20.5,37.5,137.3,10,6.9,8,22.1,37.5,137.3,10,7,8,22.4,37.5,137.3,10,6.9,8,32.9,37.5,137.3,10,6.9,8,38.7,37.5,137.3,10,6.9,8,46.4,37.5,137.3,10,6.9,8,65.9,37.5,137.3,10,6.9,8,68.9,37.5,137.3,10,6.8,8,73.2,37.5,137.3,10,6.8,8,92.9,37.5,137.3,10,6.8,8,112.9,37.5,137.3,10,6.8,8,120.6,37.5,137.3,10,6.8,8] },
+  noto2024f: { det: 2.0, warn: [4], r: [6,37.4,137.4,10,1,-1,7,37.4,137.4,10,1,-1,8,37.4,137.4,10,1,-1,8,37.5,137.2,10,5.7,5,8.5,37.5,137.2,10,5.7,5,9.5,37.5,137.2,10,5.7,5,10.1,37.5,137.3,10,5.8,6,11.6,37.5,137.2,10,5.9,6,12,37.5,137.2,10,5.9,6,12.1,37.5,137.2,10,6,6,16.1,37.5,137.2,10,5.9,6,17,37.5,137.2,10,5.4,5,18.1,37.5,137.2,10,5.6,5,22.6,37.5,137.3,10,5.8,6,23.4,37.5,137.3,10,5.9,6,32.1,37.5,137.3,10,5.9,6,36.2,37.5,137.2,10,5.8,5,41.7,37.5,137.3,10,5.8,6,47.1,37.5,137.2,10,5.8,5,64.2,37.5,137.3,10,5.8,6,64.3,37.5,137.3,10,5.8,6,68.2,37.5,137.3,10,5.8,5,81.5,37.5,137.3,10,5.8,5] },
+  noto2024a: { det: 2.5, warn: [2], r: [8.9,37.1,136.7,10,1,3,9.2,37.3,136.6,20,5.8,4,9.7,37.3,136.6,20,6.3,5,10.2,37.3,136.6,20,6.4,5,12.6,37.3,136.6,20,6.4,5,13.5,37.3,136.6,20,6.4,5,18.3,37.4,136.5,10,6.7,5,20,37.3,136.8,10,6.3,6,20.6,37.5,136.6,10,6.7,5,21.3,37.2,136.8,20,6.4,5,21.8,37.3,136.8,10,6.4,7,22.8,37.3,136.8,20,6.4,5,23.2,37.2,136.8,10,6.3,6,24.1,37.2,136.8,10,6.4,6,25.3,37.2,136.8,20,6.5,6,25.7,37.2,136.8,10,6.4,6,26.3,37.2,136.8,20,6.5,6,29.1,37.2,136.8,10,6.3,6,31.7,37.2,136.9,10,6.3,7,32.6,37.2,136.9,10,6.3,7,34.4,37.2,136.8,10,6.4,6,38.6,37.2,136.8,10,6.3,6,58.4,37.2,136.8,10,6.3,6,71.3,37.2,136.8,10,6.3,6,90.5,37.2,136.8,10,6.3,6,101.5,37.2,136.8,10,6.3,6] },
 };
 // a quake's real reports as Quaker rows (event-local times). The accuracy line counts the stations the model has
 // tripped by then; a PLUM-only report (JMA's M1.0 placeholder) shows as an assumed hypocenter.
@@ -2732,7 +2735,9 @@ function sceneAt(world, tau, prefs) {
   const sc = { tau, events: [], items: [], primary: null, map: { live: 1, flash: null, report: null, tsunami: [] } };
   for (const E of world.evs) {
     const active = tau >= E.ev.t0;
-    const rep = active ? reportAt(E, tau) : null;
+    // reports can come before the quake's own origin when a smaller one just before it set them off
+    // (Noto 2024: the first warning went out for the M5.9 13 s earlier, then carried on for the M7.6)
+    const rep = active || (E.reports[0] && tau >= E.reports[0].t) ? reportAt(E, tau) : null;
     sc.events.push({ E, active, lt: tau - E.ev.t0, rep, pred: rep ? reportPred(world, E, rep) : null });
   }
   let best = null;
@@ -3268,14 +3273,48 @@ function areaLabel(env, a) {
   const P = DB.parents[DB.aPar[a]];
   return P.c === 'JP' ? (EN() ? DB.aNameEn[a] : DB.aName[a]) : `${DB.aName[a]}, ${P.ab}`;
 }
+// JMA tsunami forecast regions that cover only part of a prefecture (the rest of Japan's coast goes by
+// prefecture): [key, prefecture, name, English name, which of its coastal towns belong]
+const TSU_ZONES = [
+  ['hk-sjn', '北海道', '北海道日本海沿岸北部', 'Hokkaido Sea of Japan coast (north)', (la, lo) => la >= 43.0 && lo < 141.95],
+  ['hk-sjs', '北海道', '北海道日本海沿岸南部', 'Hokkaido Sea of Japan coast (south)', (la, lo) => la < 43.0 && lo < 140.6],
+  ['hk-pw', '北海道', '北海道太平洋沿岸西部', 'Hokkaido Pacific coast (west)', (la, lo) => la < 42.75 && lo >= 140.6 && lo < 142.0],
+  ['ao-sj', '青森県', '青森県日本海沿岸', 'Aomori Sea of Japan coast', (la, lo) => lo < 140.35],
+  ['ni-main', '新潟県', '新潟県上中下越', 'Niigata Joetsu, Chuetsu & Kaetsu', (la, lo) => !(lo < 138.6 && la > 37.75)],
+  ['ni-sado', '新潟県', '佐渡', 'Sado', (la, lo) => lo < 138.6 && la > 37.75],
+  ['is-noto', '石川県', '石川県能登', 'Ishikawa Noto', (la) => la >= 36.8],
+  ['is-kaga', '石川県', '石川県加賀', 'Ishikawa Kaga', (la) => la < 36.8],
+  ['hy-n', '兵庫県', '兵庫県北部', 'Northern Hyogo', (la) => la > 35.3],
+  ['sh-iz', '島根県', '島根県出雲・石見', 'Shimane Izumo & Iwami', (la) => la <= 35.9],
+  ['sh-oki', '島根県', '隠岐', 'Oki Islands', (la) => la > 35.9],
+  ['ya-sj', '山口県', '山口県日本海沿岸', 'Yamaguchi Sea of Japan coast', (la, lo) => la > 34.2 + (lo - 131.0) * 0.25],
+  ['fk-sj', '福岡県', '福岡県日本海沿岸', 'Fukuoka Sea of Japan coast', (la, lo) => la > 33.55 && lo < 130.75],
+  ['sa-n', '佐賀県', '佐賀県北部', 'Northern Saga', (la, lo) => lo < 130.05 || la > 33.4],
+  ['ng-it', '長崎県', '壱岐・対馬', 'Iki & Tsushima', (la) => la > 33.7],
+];
+function tsuZoneParent(DB, Z) { return DB.parents.findIndex((P) => P.c === 'JP' && P.ja === Z[1]); }
 function tsunamiLevelsFor(env, it, E) {
   const DB = env.world.DB;
   if (it && it.data.levels === 'manual') {
     const lvl = new Int8Array(DB.nA).fill(-1), parLvl = new Int8Array(DB.parents.length).fill(-1);
     let max = -1;
-    for (const [k, v] of Object.entries(it.data.manual || {})) { const p = +k; if (p >= 0 && p < parLvl.length) { parLvl[p] = v; if (v > max) max = v; } }
+    const zones = [], rows = [];
+    for (const [k, v] of Object.entries(it.data.manual || {})) {
+      if (k.startsWith('z:')) { const Z = TSU_ZONES.find((z) => z[0] === k.slice(2)); if (Z) zones.push([Z, v]); continue; }
+      const p = +k;
+      if (p >= 0 && p < parLvl.length) { parLvl[p] = v; if (v > max) max = v; rows.push([v, parName(DB, p)]); }
+    }
     for (const a of DB.coastAreas) lvl[a] = parLvl[DB.aPar[a]];
-    return { lvl, parLvl, max, manual: true };
+    // a region within a prefecture colors only its own stretch of coast and is listed by its own name
+    for (const [Z, v] of zones) {
+      const p = tsuZoneParent(DB, Z);
+      if (p < 0) continue;
+      for (const a of DB.coastAreas) if (DB.aPar[a] === p && Z[4](DB.aLat[a], DB.aLon[a])) lvl[a] = v;
+      if (v > parLvl[p]) parLvl[p] = v;
+      if (v > max) max = v;
+      rows.push([v, UI_LANG === 'en' ? Z[3] : Z[2]]);
+    }
+    return { lvl, parLvl, max, manual: true, rows: zones.length ? rows : null };
   }
   return tsunamiFor(DB, E.ph);
 }
@@ -3657,8 +3696,10 @@ function reportHeader(c, env, en, E, w, opts) {
   txt(c, isEn ? 'DEPTH' : '深さ  DEPTH', 170, yy, fnt(700, 14, LFm), '#7D8EA1');
   const fM = fnt(700, 56, FONT_NUM);
   const mwid = txt(c, 'M', 22, yy + 60, fnt(600, 32, FONT_NUM), '#9FB0C3');
-  txt(c, ph.M.toFixed(1), 26 + mwid, yy + 60, fM, '#FFFFFF');
-  const dx = Math.max(170, 44 + mwid + mw(c, ph.M.toFixed(1), fM));
+  // the magnitude as JMA had announced it by then (Noto: M7.4 at 16:16, M7.6 from 16:22), else the quake's own
+  const Ms = (opts.M !== null && opts.M !== undefined && opts.M !== '' && isFinite(+opts.M) ? +opts.M : ph.M).toFixed(1);
+  txt(c, Ms, 26 + mwid, yy + 60, fM, '#FFFFFF');
+  const dx = Math.max(170, 44 + mwid + mw(c, Ms, fM));
   if (ph.depth < 5) txt(c, isEn ? 'Very shallow' : 'ごく浅い', dx, yy + 54, fnt(700, isEn ? 24 : 26, LFm), '#FFFFFF');
   else { const ds = `${Math.round(ph.depth)}`; txt(c, ds, dx, yy + 60, fM, '#FFFFFF'); txt(c, 'km', dx + 5 + mw(c, ds, fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3'); }
   if (opts.maxIdx !== undefined) {
@@ -3736,7 +3777,7 @@ BOX.report = {
     const it = en.it;
     const maxIdx = it.data.maxOverride !== null && it.data.maxOverride !== undefined && it.data.maxOverride !== '' ? +it.data.maxOverride : shIdx(E.ph.maxObs);
     const isEn = EN();
-    reportHeader(c, env, en, E, w, { h: 410, title: isEn ? 'Earthquake Information' : '震源・震度に関する情報', sub: isEn ? 'EPICENTER & SEISMIC INTENSITY' : 'EARTHQUAKE & SEISMIC INTENSITY INFORMATION', maxIdx, tsunami: reportTsunami(env, en, E) });
+    reportHeader(c, env, en, E, w, { h: 410, title: isEn ? 'Earthquake Information' : '震源・震度に関する情報', sub: isEn ? 'EPICENTER & SEISMIC INTENSITY' : 'EARTHQUAKE & SEISMIC INTENSITY INFORMATION', maxIdx, tsunami: reportTsunami(env, en, E), M: it.data.M });
     const L = reportLines(c, env, en, E, w);
     const y2 = 424;
     const lh = 26;
@@ -3772,7 +3813,7 @@ BOX.epicenter = {
   draw(c, env, en, w, h) {
     const E = EOf(env, en);
     const isEn = EN();
-    reportHeader(c, env, en, E, w, { h, title: isEn ? 'Epicenter Information' : '震源に関する情報', sub: isEn ? 'HYPOCENTER & MAGNITUDE · INTENSITY TO FOLLOW' : 'EARTHQUAKE INFORMATION · EPICENTER', tsunami: reportTsunami(env, en, E) });
+    reportHeader(c, env, en, E, w, { h, title: isEn ? 'Epicenter Information' : '震源に関する情報', sub: isEn ? 'HYPOCENTER & MAGNITUDE · INTENSITY TO FOLLOW' : 'EARTHQUAKE INFORMATION · EPICENTER', tsunami: reportTsunami(env, en, E), M: en.it.data.M });
   },
 };
 function flashRows(env, E) {
@@ -3786,6 +3827,18 @@ function flashRows(env, E) {
   const DB = env.world.DB;
   return E.ph._flashRows.map((r) => ({ idx: r.idx, names: r.ps.map((p) => parName(DB, p)) }));
 }
+// a first flash often goes out before the strongest station reports in (Noto: 6+ at 16:11, 7 at 16:14):
+// cap = the strongest level it shows, anything above folds into that row
+function flashRowsFor(env, en, E) {
+  const rows = flashRows(env, E), cap = en.it.data.cap;
+  if (cap === null || cap === undefined || cap === '' || !isFinite(+cap)) return rows;
+  const out = [];
+  for (const r of rows) {
+    const idx = Math.min(r.idx, +cap), last = out[out.length - 1];
+    if (last && last.idx === idx) last.names = last.names.concat(r.names); else out.push({ idx, names: r.names.slice() });
+  }
+  return out;
+}
 const flashFont = () => (EN() ? fnt(600, 17, FONT_UI) : fnt(700, 17, FONT_JP));
 const flashJoin = (names) => names.join(EN() ? ', ' : '　');
 BOX.flash = {
@@ -3793,7 +3846,7 @@ BOX.flash = {
     const E = EOf(env, en), c = env.ctx;
     const w = en.it.w >= 240 ? en.it.w : 448;
     let h = 168;
-    for (const r of flashRows(env, E).slice(0, 7)) h += Math.max(44, 12 + wrapText(c, flashJoin(r.names), flashFont(), w - 98).length * 24) + 6;
+    for (const r of flashRowsFor(env, en, E).slice(0, 7)) h += Math.max(44, 12 + wrapText(c, flashJoin(r.names), flashFont(), w - 98).length * 24) + 6;
     return { w, h: h + 10 };
   },
   draw(c, env, en, w, h) {
@@ -3814,7 +3867,7 @@ BOX.flash = {
     }
     let y = 172, i = 0;
     const ff = flashFont();
-    for (const r of flashRows(env, E).slice(0, 7)) {
+    for (const r of flashRowsFor(env, en, E).slice(0, 7)) {
       const a = env.prefs.reduced ? 1 : clamp((en.age - 0.25 - i * 0.08) / 0.3, 0, 1);
       i++;
       const lines = wrapText(c, flashJoin(r.names), ff, w - 98);
@@ -3846,9 +3899,9 @@ function cardFor(env, en) {
       const blocks = [];
       for (let k = 3; k >= 0; k--) {
         const ps = [];
-        L.parLvl.forEach((v, p) => { if (v === k) ps.push(p); });
-        if (!ps.length) continue;
-        const names = ps.map((p) => parName(DB, p));
+        if (!L.rows) L.parLvl.forEach((v, p) => { if (v === k) ps.push(p); });
+        const names = L.rows ? L.rows.filter((r) => r[0] === k).map((r) => r[1]) : ps.map((p) => parName(DB, p));
+        if (!names.length) continue;
         blocks.push({ k: 'row', badge: { col: TSU_LEVELS[k].col, ink: TSU_LEVELS[k].ink, label: isEn ? TSU_EN[k].short : TSU_LEVELS[k].short }, s: names.join(jpText ? '、' : ', '), font: jpText ? F.ja : F.enB, color: '#E8EEF4' });
       }
       if (!blocks.length) blocks.push(isEn ? T('No tsunami expected.', F.enM, '#9FD4A8') : T('津波の心配はありません · No tsunami expected.', F.ja, '#9FD4A8'));
@@ -8019,12 +8072,16 @@ function inspContent(it, D, set) {
       }
       return g;
     }
-    case 'flash': return fg('Content', h('p', { class: 'note', text: 'Lists prefectures or states with intensity 3 and up, straight from the quake. The map shades them too.' }));
-    case 'epicenter': return fg('Content', h('p', { class: 'note', text: `Origin time, epicenter, magnitude and depth, with the tsunami line. Use it before the intensity report, like JMA’s ${enUI() ? 'hypocenter information' : '震源に関する情報'}.` }));
+    case 'flash': return fg('Content', h('p', { class: 'note', text: 'Lists prefectures or states with intensity 3 and up, straight from the quake. The map shades them too.' }),
+      fRow('Strongest shown', cSel(() => (D.cap === null || D.cap === undefined ? '' : String(D.cap)), (v) => edEdit(() => { D.cap = v === '' ? null : +v; }), SH_OPTS(false)),
+        'A first flash often goes out before the strongest station reports in. Noto’s said 6 Upper at 16:11 and 7 at 16:14, so use two flashes.'));
+    case 'epicenter': return fg('Content', h('p', { class: 'note', text: `Origin time, epicenter, magnitude and depth, with the tsunami line. Use it before the intensity report, like JMA’s ${enUI() ? 'hypocenter information' : '震源に関する情報'}.` }),
+      fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' }), 'What JMA had announced by then (Noto went out as M7.4, then M7.6).'));
     case 'longperiod': return fg('Content', h('p', { class: 'note', text: 'Automatic from the quake’s size and distance, in JMA long-period classes 1–4.' }));
     case 'report': {
       const g = fg('Content',
         fRow('Max intensity', cSel(() => (D.maxOverride === null || D.maxOverride === undefined ? '' : String(D.maxOverride)), (v) => edEdit(() => { D.maxOverride = v === '' ? null : +v; }), SH_OPTS(true))),
+        fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' })),
         fRow('Tsunami line', cArea(() => D.tsunamiText, set(D, 'tsunamiText'), { rows: 2, ph: 'Empty = automatic. Line 1 Japanese, line 2 English.' })),
         fRow('List', cSel(() => D.list, set(D, 'list', { structural: true }), [['auto', 'Observed intensities (automatic)'], ['custom', 'My own lines']])));
       if (D.list === 'custom') {
@@ -8042,7 +8099,8 @@ function inspContent(it, D, set) {
         fRow('Advice line', cArea(() => D.note, set(D, 'note'), { rows: 2, ph: 'Empty = automatic advice' })));
       if (D.levels === 'manual') {
         const country = E ? E.ph.country : 'JP';
-        const parOpts = S.DB.parents.filter((p) => p.c === country && S.DB.coastAreas.some((a) => S.DB.aPar[a] === p.idx)).map((p) => [String(p.idx), parName(S.DB, p.idx)]);
+        const parOpts = S.DB.parents.filter((p) => p.c === country && S.DB.coastAreas.some((a) => S.DB.aPar[a] === p.idx)).map((p) => [String(p.idx), parName(S.DB, p.idx)])
+          .concat(country === 'JP' ? TSU_ZONES.map((z) => ['z:' + z[0], (enUI() ? z[3] : z[2]) + ' (part of a prefecture)']) : []);
         const entries = Object.entries(D.manual || {});
         g.append(rowsEditor(entries, ([pk, lv]) => [
           fRow('Area', cSel(() => pk, (v) => edEdit(() => { const m = { ...D.manual }; const l = m[pk]; delete m[pk]; m[v] = l; D.manual = m; }, { structural: true }), parOpts)),
