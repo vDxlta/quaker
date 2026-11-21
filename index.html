@@ -2204,14 +2204,14 @@ const REAL_EEW = {
 function realEEW(ph, key) {
   const q = key && REAL_EEW[key];
   if (!q) return null;
-  const first = Math.min(...q.warn), n = q.r.length / 6, out = [];
+  const first = Math.min(...q.warn), issued = new Set(q.warn), n = q.r.length / 6, out = [];
   for (let k = 0; k < n; k++) {
     const [t, lat, lon, depth, M, mx] = q.r.slice(k * 6, k * 6 + 6);
     let nT = 0;
     while (nT < ph.trig.length && ph.trig[nT] <= t) nT++;
     const assumed = M <= 1;
     out.push({ t, kind: k + 1 >= first ? 'warning' : 'forecast', M, depth, lat, lon, acc: assumed || nT <= 1 ? 0 : nT === 2 ? 1 : nT <= 4 ? 2 : 3,
-      plum: assumed, assumed, final: k === n - 1, maxOverride: mx >= 0 ? mx : null });
+      plum: assumed, assumed, final: k === n - 1, maxOverride: mx >= 0 ? mx : null, issue: issued.has(k + 1) });
   }
   return out;
 }
@@ -2446,7 +2446,7 @@ function normalizeDoc(d) {
   doc.eew = (Array.isArray(doc.eew) ? doc.eew : []).filter((r) => r && evIds.has(r.ev)).map((r) => ({
     id: r.id || newId('r'), ev: r.ev, t: num(r.t, 5), kind: ['forecast', 'warning', 'cancel'].includes(r.kind) ? r.kind : 'forecast',
     M: clamp(num(r.M, 6), 0, 9.9), depth: clamp(num(r.depth, 10), 0, 700), lat: num(r.lat, 39), lon: num(r.lon, -77),
-    acc: clamp(Math.round(num(r.acc, 3)), 0, 3), plum: !!r.plum, final: !!r.final, assumed: !!r.assumed,
+    acc: clamp(Math.round(num(r.acc, 3)), 0, 3), plum: !!r.plum, final: !!r.final, assumed: !!r.assumed, ...(typeof r.issue === 'boolean' ? { issue: r.issue } : {}),
     maxOverride: r.maxOverride === null || r.maxOverride === undefined || r.maxOverride === '' ? null : clamp(Math.round(num(r.maxOverride, -1)), -1, 8),
   }));
   doc.items = (Array.isArray(doc.items) ? doc.items : []).filter((it) => it && BOX_TYPES[it.type]).map((it) => ({
@@ -2545,6 +2545,21 @@ function buildWorld(DB, doc, prefs) {
     world.my.areaNameEn = world.my.area >= 0 ? (DB.aJP[world.my.area] ? DB.aNameEn[world.my.area] : `${DB.aName[world.my.area]}, ${DB.parents[DB.aPar[world.my.area]].ab}`) : '';
     world.my.resp = evs.map((E) => pointResponse(E.ph, world.my.lat, n360(world.my.lon), world.my.amp));
   }
+  // A warning stays in force once it's out, but JMA only *issues* one (the moment the chimes and phone alerts
+  // go off) for the first warning and when a later report adds areas. Real replays carry JMA's own list.
+  for (const E of evs) {
+    // simulated reports: JMA sends a follow-up warning when a region it had at 3 or lower is now expected at 5 Lower or more
+    const given = E.reports.some((r) => typeof r.issue === 'boolean');
+    const seen = new Float32Array(DB.parents.length).fill(-9);
+    for (const r of E.reports) {
+      r._issue = false;
+      if (r.kind === 'cancel') continue;
+      if (given) { r._issue = r.kind === 'warning' && !!r.issue; continue; }
+      const pr = reportPred(world, E, r), best = parentBest(DB, E, pr);
+      if (r.kind === 'warning') r._issue = r._firstWarn || best.some((v, p) => v >= 4.5 && seen[p] < 3.5);
+      best.forEach((v, p) => { if (v > seen[p]) seen[p] = v; });
+    }
+  }
   // sound triggers
   const S = world.sounds;
   for (const E of evs) {
@@ -2555,7 +2570,7 @@ function buildWorld(DB, doc, prefs) {
     for (const r of E.reports) {
       let slot = 'update';
       if (r.kind === 'cancel') slot = 'cancel';
-      else if (r._firstWarn) slot = 'warning';
+      else if (r._issue || r._firstWarn) slot = 'warning';
       else if (r._first) slot = 'forecast';
       else if (r.final) slot = 'final';
       push(r.t, slot, r.id);
@@ -2597,18 +2612,24 @@ function fcSoundTriggers(world, prefs) {
   const out = [];
   const snd = prefs && prefs.sound;
   if (!snd || !snd.fcOn) return out;
-  const every = snd.fcWhen === 'every', replace = snd.fcMix !== 'both';
+  const when = snd.fcWhen === 'every' || snd.fcWhen === 'up' ? snd.fcWhen : 'issue', replace = snd.fcMix !== 'both';
   for (const E of world.evs) {
     const ov = E.ev.sounds || {};
-    let top = -1;
+    let top = -1, lastKey = '';
     for (const r of E.reports) {
       if (r.kind === 'cancel') continue;
       const p = reportPred(world, E, r);
       const row = clamp((p ? p.maxIdx : -1) - 2, 0, FC_KEYS.length - 1);
       const rose = row > top;
       if (rose) top = row;
-      if (!(r.final ? rose : every || rose)) continue;
-      out.push({ t: r.t, ...fcPick(ov, snd.slots || {}, row), fc: row, rep: r.id, replace: replace && !r.final });
+      const pick = fcPick(ov, snd.slots || {}, Math.max(row, top));
+      const key = pick.slot + '|' + (pick.sound || '');
+      // 'issue': the first report and each time a warning goes out, like the real alerts
+      // 'up': when the forecast climbs into a row with a different sound (rows set to "same" don't replay it)
+      const go = when === 'every' ? true : when === 'up' ? rose && key !== lastKey : r._first || r._issue;
+      if (!go || (r.final && !rose)) continue;
+      lastKey = key;
+      out.push({ t: r.t, ...pick, fc: row, rep: r.id, replace: replace && !r.final });
     }
   }
   return out;
@@ -2662,6 +2683,13 @@ function reportAt(E, tau) {
   let r = null;
   for (const x of E.reports) { if (x.t <= tau) r = x; else break; }
   return r;
+}
+// the strongest forecast in each prefecture (state) for a report
+function parentBest(DB, E, pr) {
+  const best = new Float32Array(DB.parents.length).fill(-9);
+  if (!pr) return best;
+  for (const a of E.ph.cand) { const v = pr.pred[a], p = DB.aPar[a]; if (v > best[p]) best[p] = v; }
+  return best;
 }
 function reportPred(world, E, r) {
   if (!r || r.kind === 'cancel') return null;
@@ -2897,10 +2925,7 @@ function guessStrike(DB, lat, lon) {
 function easyFromImport(DB, q) {
   const e = defaultEasy();
   const ep = isFinite(q.time) ? q.time : Date.now();
-  const lon = n360(q.lon);
-  const a = areaAt(DB, lon, q.lat);
-  const [na] = a >= 0 ? [a] : nearestArea(DB, q.lat, lon);
-  const tz = DB.parents[DB.aPar[na >= 0 ? na : 0]].tz;
+  const tz = realTz(DB, q);
   Object.assign(e, {
     lat: +q.lat, lon: +q.lon, M: clamp(+q.M, 2.5, 9.5), depth: clamp(+q.depth, 0, 700), strike: guessStrike(DB, +q.lat, +q.lon), kind: 'real', preset: 'custom',
     title: q.title, source: q.src, clock: { mode: 'custom', start: epochToWall(ep, tz), tz: 'auto' },
@@ -2909,13 +2934,17 @@ function easyFromImport(DB, q) {
   });
   return e;
 }
-function easyFromReal(DB, q) {
-  const e = defaultEasy();
-  const R = REAL_EEW[q.id] || null;
+// a library quake's local time zone (its own prefecture or state, or the nearest one offshore)
+function realTz(DB, q) {
   const lon = n360(q.lon);
   const a = areaAt(DB, lon, q.lat);
   const [na] = a >= 0 ? [a] : nearestArea(DB, q.lat, lon);
-  const tz = DB.parents[DB.aPar[na >= 0 ? na : 0]].tz;
+  return DB.parents[DB.aPar[na >= 0 ? na : 0]].tz;
+}
+function easyFromReal(DB, q) {
+  const e = defaultEasy();
+  const R = REAL_EEW[q.id] || null;
+  const tz = realTz(DB, q);
   Object.assign(e, {
     lat: q.lat, lon: q.lon, M: q.M, depth: q.depth, strike: q.strike, kind: 'real', preset: 'real:' + q.id, title: q.en, source: q.region === 'jp' ? 'JMA' : 'USGS',
     country: q.region === 'jp' ? 'JP' : 'US',
@@ -9074,7 +9103,7 @@ const PREFS_DEFAULT = {
   map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1, preBox: true, preEst: true, logo: true },
   fx: { shake: 0.6, vignette: true, reveal: true, shadows: true },
   clock: { h12: false },
-  sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'up', fcMix: 'replace' },
+  sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'issue', fcMix: 'replace', fcV: 2 },
   rec: { res: 1080, fps: 30, sound: true },
   cam: { ...CAM_DEFAULT },
   fonts: { jp: '', ui: '', num: '', jpScale: 1, uiScale: 1, numScale: 1 },
@@ -9147,6 +9176,8 @@ function mergePrefs(p) {
     else if (p[k] !== undefined) d[k] = p[k];
   }
   d.sound.slots = { ...SOUND_DEFAULTS, ...(p.sound && p.sound.slots) };
+  // the old default replayed the forecast sound on every climb; the new one follows the real alerts
+  if (!(p.sound && p.sound.fcV >= 2)) { if (d.sound.fcWhen === 'up') d.sound.fcWhen = 'issue'; d.sound.fcV = 2; }
   if (!Array.isArray(d.sound.patterns)) d.sound.patterns = [];
   return d;
 }
@@ -9260,6 +9291,15 @@ function sanitizeEasy(e) {
   o.extras = { ...EXTRAS_DEFAULT, ...(e.extras || {}) };
   o.clock = { mode: 'now', start: '', tz: 'auto', ...(e.clock || {}) };
   o.intro = normIntro(e.intro);
+  // replays saved before real EEW reports existed pick them up (Noto's precursor too, with the clock moved back to it)
+  if (typeof o.preset === 'string' && o.preset.startsWith('real:') && !('eewSrc' in e)) {
+    const id = o.preset.slice(5), R = REAL_EEW[id], q = REAL_QUAKES.find((x) => x.id === id);
+    if (R && q && S.DB) {
+      const fresh = easyFromReal(S.DB, q);
+      o.eewSrc = fresh.eewSrc; o.pre = fresh.pre;
+      if (R.pre && o.clock.mode === 'custom' && o.clock.start === epochToWall(q.epoch, realTz(S.DB, q))) o.clock = { ...o.clock, start: fresh.clock.start };
+    } else if (S.DB) o.eewSrc = null;
+  }
   return o;
 }
 // swap the working state over to a project record
@@ -10684,7 +10724,7 @@ function buildSoundSettings() {
   root.append(h('div', { class: 'row' },
     cChk(() => !!P.sound.fcOn, prefSet(P.sound, 'fcOn', () => buildSoundSettings()), 'Pick the EEW sound by its forecast shindo'),
     h('span', { style: 'flex:1' }),
-    fRow('Play it', cSel(() => P.sound.fcWhen || 'up', prefSet(P.sound, 'fcWhen'), [['up', 'On the first report and when the forecast goes up'], ['every', 'On every EEW report']]))));
+    fRow('Play it', cSel(() => P.sound.fcWhen || 'issue', prefSet(P.sound, 'fcWhen'), [['issue', 'On the first report and each time a warning goes out (like the real alerts)'], ['up', 'On the first report and when the forecast climbs to a new sound'], ['every', 'On every EEW report']]))));
   root.append(h('p', { class: 'note', text: 'Optional. This listens to the EEW itself: the strongest shindo it forecasts, not what the stations measure (that’s Rising shindo below). Set one sound for 3 or lower and a different one from 5 Lower up, and “Same as” fills the rows in between. Worth knowing: JMA sends an EEW as a plain forecast (予報) until it expects 5 Lower somewhere, and that’s when it becomes a warning (警報). Quaker does the same, so 5 Lower is the natural spot for the scarier sound. A quake’s “Warn at” setting in Advanced can move that line.' }));
   const fg2 = slotGrid(FC_SLOTS, true, true);
   if (!P.sound.fcOn) fg2.classList.add('off');
@@ -10901,7 +10941,7 @@ async function boot() {
   let st = loadJSON('quaker.v2.state');
   if (!st) { const m = migrateV1(); if (m) st = { easy: m.easy, view: m.view, mode: 'easy' }; }
   if (st) {
-    if (st.easy && isFinite(+st.easy.lat)) { S.easy = { ...defaultEasy(), ...st.easy }; S.easy.extras = { ...EXTRAS_DEFAULT, ...(st.easy.extras || {}) }; S.easy.clock = { mode: 'now', start: '', tz: 'auto', ...(st.easy.clock || {}) }; S.easy.intro = normIntro(st.easy.intro); }
+    if (st.easy && isFinite(+st.easy.lat)) S.easy = sanitizeEasy(st.easy);
     if (st.adv && typeof st.adv === 'object') { try { S.adv = normalizeDoc(st.adv); } catch (e) { S.adv = null; } }
     if (typeof st.speed === 'number') S.speed = st.speed;
     if (typeof st.follow === 'boolean') S.follow = st.follow;
