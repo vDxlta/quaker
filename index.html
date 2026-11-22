@@ -341,7 +341,8 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .seq .check small.hint { display: block; color: var(--faint); font-size: 12px; margin-top: 1px; }
 .seq .check.sub { margin-left: 26px; }
 .seq .check.off { opacity: 0.45; }
-.tl-cut { position: absolute; top: 0; bottom: 0; right: 0; border-left: 2px solid rgba(255,255,255,.85); background: repeating-linear-gradient(135deg, rgba(10,14,20,.55) 0 4px, rgba(10,14,20,.2) 4px 8px); pointer-events: auto; }
+.tl-cut { position: absolute; top: 0; bottom: 0; border-left: 2px solid rgba(255,255,255,.85); border-right: 2px solid rgba(255,255,255,.5); background: repeating-linear-gradient(135deg, rgba(10,14,20,.55) 0 4px, rgba(10,14,20,.2) 4px 8px); pointer-events: auto; }
+.tl-cut.end { border-right: 0; }
 .seq-pop { width: 380px; padding: 10px 12px; }
 .prob-btn .cnt { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: rgba(255,255,255,.12); font-variant-numeric: tabular-nums; }
 .prob-btn .ico { opacity: .55; }
@@ -2471,7 +2472,7 @@ function normalizeDoc(d) {
   doc.eew = (Array.isArray(doc.eew) ? doc.eew : []).filter((r) => r && evIds.has(r.ev)).map((r) => ({
     id: r.id || newId('r'), ev: r.ev, t: num(r.t, 5), kind: ['forecast', 'warning', 'cancel'].includes(r.kind) ? r.kind : 'forecast',
     M: clamp(num(r.M, 6), 0, 9.9), depth: clamp(num(r.depth, 10), 0, 700), lat: num(r.lat, 39), lon: num(r.lon, -77),
-    acc: clamp(Math.round(num(r.acc, 3)), 0, 3), plum: !!r.plum, final: !!r.final, assumed: !!r.assumed, ...(typeof r.issue === 'boolean' ? { issue: r.issue } : {}),
+    acc: clamp(Math.round(num(r.acc, 3)), 0, 3), plum: !!r.plum, final: !!r.final, assumed: !!r.assumed, single: !!r.single, ...(typeof r.issue === 'boolean' ? { issue: r.issue } : {}),
     maxOverride: r.maxOverride === null || r.maxOverride === undefined || r.maxOverride === '' ? null : clamp(Math.round(num(r.maxOverride, -1)), -1, 8),
   }));
   doc.items = (Array.isArray(doc.items) ? doc.items : []).filter((it) => it && BOX_TYPES[it.type]).map((it) => ({
@@ -2551,25 +2552,35 @@ function buildWorld(DB, doc, prefs) {
     });
   }
   const items = doc.items.filter((it) => !it.hidden).slice().sort((a, b) => a.t0 - b.t0 || TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
-  // A flash or report takes over the whole map. When another quake is detected (or its first EEW goes out) while one
-  // is up, it gets out of the way so the new quake shows, and doesn't come back. 'Give way' off keeps it up.
-  const cuts = new Map();
-  const starts = [];
+  // A flash or report takes over the whole map. When something new happens while one is up (another quake is
+  // detected, or any EEW goes out, is updated or cancelled), it steps aside so that shows, and comes back once
+  // it's been quiet for a few seconds, the way JMA viewers do it. 'Give way' sets what it steps aside for and
+  // 'Comes back' how long it waits (or that it doesn't).
+  const gaps = new Map();
+  const trig = [];
   for (const E of evs) {
-    if (E.ev.shaking === false) continue;
-    const td = E.ph.tDet !== null && E.ph.tDet !== undefined ? E.ev.t0 + E.ph.tDet : Infinity;
-    const t = Math.min(td, E.reports[0] ? E.reports[0].t : Infinity);
-    if (isFinite(t)) starts.push({ E, t });
+    if (E.ev.shaking !== false && E.ph.tDet !== null && E.ph.tDet !== undefined) trig.push({ t: E.ev.t0 + E.ph.tDet, ev: E.id, why: 'det' });
+    for (const r of E.reports) trig.push({ t: r.t, ev: E.id, why: r.kind === 'cancel' ? 'cancel' : 'eew', n: r._n });
   }
+  trig.sort((a, b) => a.t - b.t);
   for (const it of items) {
-    if ((it.type !== 'flash' && it.type !== 'report') || it.data.giveWay === false) continue;
+    if (it.type !== 'flash' && it.type !== 'report') continue;
+    const gw = it.data.giveWay;
+    if (gw === false) continue;
     const mine = it.ev && it.ev !== 'auto' ? it.ev : evs[0] && evs[0].id;
-    let cut = null;
-    for (const s of starts) {
-      if (s.E.id === mine || s.t <= it.t0 + 0.05 || (it.t1 !== null && s.t >= it.t1)) continue;
-      if (cut === null || s.t < cut.t) cut = { t: +s.t.toFixed(2), ev: s.E.id };
+    const back = giveBackOf(it.data);
+    const list = [];
+    for (const s of trig) {
+      if (s.t <= it.t0 + 0.05) continue;
+      if (it.t1 !== null && s.t >= it.t1) break;
+      if (s.ev === mine && (s.why === 'det' || gw === 'quakes')) continue;
+      const g = list[list.length - 1];
+      if (g && g.t1 !== null && s.t <= g.t1) { g.t1 = s.t + back; g.why.push(s); }
+      else if (!g || g.t1 !== null) list.push({ t: +s.t.toFixed(2), t1: s.t + back, ev: s.ev, why: [s] });
     }
-    if (cut) cuts.set(it.id, cut);
+    // no point coming back for a moment at the very end
+    for (const g of list) if (!isFinite(g.t1) || (it.t1 !== null && g.t1 > it.t1 - 1.5)) g.t1 = null; else g.t1 = +g.t1.toFixed(2);
+    if (list.length) gaps.set(it.id, list);
   }
   // timeline end
   let tEnd = 20;
@@ -2580,7 +2591,7 @@ function buildWorld(DB, doc, prefs) {
   if (doc.duration) tEnd = doc.duration;
   const main = evs[0];
   const tz = resolveTz(doc.clock.tz, main.ph.tz);
-  const world = { cuts, DB, doc, evs, evMap, items, tEnd, tz, main, sounds: [], sensors: [] };
+  const world = { gaps, gapTrig: trig, DB, doc, evs, evMap, items, tEnd, tz, main, sounds: [], sensors: [] };
   // custom sensors' responses per event
   world.sensors = doc.sensors.custom.map((s) => ({ s, wx: wxOf(n360(s.lon)), wy: wyOf(s.lat), resp: evs.map((E) => pointResponse(E.ph, s.lat, n360(s.lon), s.amp)) }));
   world.my = doc.my ? { ...doc.my, area: areaAt(DB, doc.my.lon, doc.my.lat) } : null;
@@ -2662,7 +2673,8 @@ function fcSoundTriggers(world, prefs) {
     const ov = E.ev.sounds || {};
     let top = -1, lastKey = '';
     for (const r of E.reports) {
-      if (r.kind === 'cancel') continue;
+      // single-station reports have no forecast to sound out
+      if (r.kind === 'cancel' || r.single) continue;
       const p = reportPred(world, E, r);
       const row = clamp((p ? p.maxIdx : -1) - 2, 0, FC_KEYS.length - 1);
       const rose = row > top;
@@ -2736,8 +2748,15 @@ function parentBest(DB, E, pr) {
   for (const a of E.ph.cand) { const v = pr.pred[a], p = DB.aPar[a]; if (v > best[p]) best[p] = v; }
   return best;
 }
+// how long a flash or report waits after the last new thing before it comes back (Infinity: it doesn't)
+function giveBackOf(d) {
+  const b = d && d.giveBack;
+  if (b === 'never') return Infinity;
+  return typeof b === 'number' && b >= 0 ? b : 8;
+}
 function reportPred(world, E, r) {
-  if (!r || r.kind === 'cancel') return null;
+  // single-station reports carry no intensity forecast at all (単独点処理のため震度推定なし)
+  if (!r || r.kind === 'cancel' || r.single) return null;
   // PLUM forecasts come from the shaking stations are feeling, not from a hypocenter: stand in with the real source
   const p = r.assumed ? predArray(world.DB, E.ph, E.ph.M, E.ph.depth, E.ph.lat, E.ph.lon) : predArray(world.DB, E.ph, r.M, r.depth, r.lat, r.lon);
   const maxIdx = r.maxOverride !== null && r.maxOverride !== undefined ? r.maxOverride : shIdx(p.max);
@@ -2774,8 +2793,23 @@ function itemPresence(it, tau, prefs, t0, endAt) {
   }
   return { p, pin, pout, phase, A, age: tau - start };
 }
+// presence with gaps where the box steps aside: it slides out at each gap and back in when the gap ends (its age
+// starts over then, so it reveals again and the camera eases back to it)
+function gapPresence(it, tau, prefs, t0, gl) {
+  let start = t0 ?? it.t0;
+  for (const g of gl) {
+    if (tau < g.t) break;
+    if (g.t1 === null || tau < g.t1) {
+      const pr = itemPresence(it, tau, prefs, start, g.t);
+      const w = 1 - easeFn('easeInOut')(clamp((tau - g.t) / 1.4, 0, 1));
+      return pr || { away: { w }, age: tau - start };
+    }
+    start = Math.max(start, g.t1);
+  }
+  return itemPresence(it, tau, prefs, start);
+}
 function sceneAt(world, tau, prefs) {
-  const sc = { tau, events: [], items: [], primary: null, map: { live: 1, flash: null, report: null, tsunami: [] } };
+  const sc = { tau, events: [], items: [], primary: null, map: { live: 1, flash: null, report: null, away: null, tsunami: [] } };
   for (const E of world.evs) {
     const active = tau >= E.ev.t0;
     // reports can come before the quake's own origin when a smaller one just before it set them off
@@ -2783,8 +2817,11 @@ function sceneAt(world, tau, prefs) {
     const rep = active || (E.reports[0] && tau >= E.reports[0].t) ? reportAt(E, tau) : null;
     sc.events.push({ E, active, lt: tau - E.ev.t0, rep, pred: rep ? reportPred(world, E, rep) : null });
   }
+  // the latest quake with a real forecast leads (a lone single-station report or a cancel doesn't take over the
+  // countdown and the rest from one that's still going)
   let best = null;
-  for (const e of sc.events) if (e.rep && (!best || e.rep.t > best.rep.t)) best = e;
+  for (const e of sc.events) if (e.rep && e.rep.kind !== 'cancel' && !e.rep.single && (!best || e.rep.t > best.rep.t)) best = e;
+  if (!best) for (const e of sc.events) if (e.rep && (!best || e.rep.t > best.rep.t)) best = e;
   sc.primary = best || sc.events.find((e) => e.active) || sc.events[0];
   let liveW = 1;
   for (const it of world.items) {
@@ -2796,8 +2833,16 @@ function sceneAt(world, tau, prefs) {
       if (!first) continue;
       t0 = Math.max(t0, first.t);
     }
-    const cut = world.cuts && world.cuts.get(it.id);
-    const pr = itemPresence(it, tau, prefs, t0, cut ? cut.t : undefined);
+    const gl = world.gaps && world.gaps.get(it.id);
+    const pr = gl ? gapPresence(it, tau, prefs, t0, gl) : itemPresence(it, tau, prefs, t0);
+    if (pr && pr.away) {
+      // stepped aside: the box is gone, the camera eases back to the quakes instead of snapping
+      if (pr.away.w > 0 && (it.type === 'report' || it.type === 'flash')) {
+        const E = ee ? ee.E : world.main;
+        if (!sc.map.away || pr.away.w > sc.map.away.w) sc.map.away = { it, E, p: 0, age: pr.age, w: pr.away.w, away: true, isReport: it.type === 'report' };
+      }
+      continue;
+    }
     if (!pr) continue;
     sc.items.push({ it, ...pr, ev: ee });
     if (it.type === 'report' || it.type === 'flash') {
@@ -3416,7 +3461,10 @@ function drawEewMini(c, env, en, ee, w, h) {
     const s = rep.assumed ? (UI_LANG === 'en' ? 'Assumed hypocenter' : '仮定震源要素') : `M${rep.M.toFixed(1)}  ${rep.depth}km`;
     txt(c, s, 17, 94, fnt(700, 17, FONT_NUM), '#9FB0C3');
     const mi = ee.pred ? ee.pred.maxIdx : -1;
-    if (mi >= 0) shindoIcon(c, w - 16 - 48, 48, 48, mi); else emptyIcon(c, w - 16 - 48, 48, 48);
+    if (rep.single) {
+      txt(c, isEn ? 'One station' : '単独点処理', w - 16, 68, fnt(700, 13, LF()), '#C9D2DC', 'right');
+      txt(c, isEn ? 'no estimate' : '震度推定なし', w - 16, 88, fnt(700, 13, LF()), '#8FA0B3', 'right');
+    } else if (mi >= 0) shindoIcon(c, w - 16 - 48, 48, 48, mi); else emptyIcon(c, w - 16 - 48, 48, 48);
   } else txt(c, cancel ? (isEn ? 'The earlier warning was cancelled.' : '先ほどの緊急地震速報は取り消されました') : (isEn ? 'Monitoring' : '監視中'), 17, 94, fnt(600, 14, LF()), '#8FA0B3');
 }
 function warnTargets(env, E, pr) {
@@ -3428,6 +3476,23 @@ function warnTargets(env, E, pr) {
   best.forEach((v, p) => { if (v >= 3.5) out.push([p, v]); });
   out.sort((a, b) => b[1] - a[1]);
   return out.map((x) => x[0]);
+}
+// JMA's EEW has carried an estimated long-period ground motion class since 2023. A stand-in from the report's
+// size and depth that lands where JMA's did for Noto (M5.5-5.9 class 1, M6.1-6.6 class 2, M7.2-7.4 class 3).
+function eewLpClass(E, r) {
+  if (!r || r.kind === 'cancel' || r.single || r.assumed || E.ph.country !== 'JP') return 0;
+  let k = r.M < 5 ? 0 : r.M < 6 ? 1 : r.M < 7 ? 2 : r.M < 7.8 ? 3 : 4;
+  if (r.depth > 150) k -= 2; else if (r.depth > 60) k -= 1;
+  return Math.max(0, k);
+}
+// the lines JMA viewers put under the header: the emergency (特別警報) note for 6 Lower and up, and the tsunami
+// note for a big shallow one. With both, they take turns.
+function eewNotes(env, E, rep, mi) {
+  const isEn = EN(), out = [];
+  if (!rep || rep.kind === 'cancel') return out;
+  if (rep.kind === 'warning' && mi >= 6) out.push(isEn ? 'EMERGENCY WARNING  ·  PROTECT YOURSELF NOW' : '特別警報  ·  身の安全を確保してください');
+  if (E.ph.country === 'JP' && !rep.assumed && rep.M >= 6.5 && rep.depth <= 60) out.push(isEn ? 'TSUNAMI POSSIBLE  ·  STAY AWAY FROM THE COAST' : '津波発生の可能性  ·  海岸から離れてください');
+  return out;
 }
 BOX.eew = {
   measure(env, en) {
@@ -3460,6 +3525,8 @@ BOX.eew = {
     const ink = warn || cancel ? '#FFFFFF' : '#1C1400';
     const isEn = EN(), LFm = LF();
     const ck = fmtClock(env.originMs + rep.t * 1000, env.tz, { h12: env.h12 });
+    const notes = eewNotes(env, E, rep, ee.pred ? ee.pred.maxIdx : -1);
+    const note = notes.length ? notes[Math.floor(Math.max(0, env.tau) / 4) % notes.length] : null;
     if (isEn) {
       const title = compact ? (cancel ? 'EEW Cancelled' : warn ? 'EEW Warning' : 'EEW Forecast') : 'Earthquake Early Warning';
       const rt = compact ? `#${rep._n}${rep.final ? ' · Final' : ''}` : '';
@@ -3468,6 +3535,7 @@ BOX.eew = {
       txt(c, title, 22, compact ? 40 : 46, fnt(700, tsz, FONT_UI), ink);
       if (!compact) {
         if (cancel) txt(c, 'CANCELLED', 23, 79, fnt(700, 15, FONT_UI), '#E2E6EB');
+        else if (note) txt(c, note, 23, 79, fnt(700, 15, FONT_UI), warn ? '#FFE3E5' : '#3B2C00');
         else if (warn) txt(c, 'WARNING  ·  STRONG SHAKING EXPECTED', 23, 79, fnt(700, 15, FONT_UI), '#FFE3E5');
         else txt(c, 'FORECAST  ·  SHAKING EXPECTED', 23, 78, fnt(700, 15, FONT_UI), '#3B2C00');
       } else txt(c, rt, w - 18, 39, fnt(700, 18, FONT_UI), ink, 'right');
@@ -3476,6 +3544,7 @@ BOX.eew = {
       txt(c, title, 22, compact ? 40 : 47, fnt(700, compact ? 26 : 32, FONT_JP), ink);
       if (!compact) {
         if (cancel) txt(c, 'THIS EARLY WARNING WAS CANCELLED', 23, 79, fnt(600, 14, FONT_UI), '#E2E6EB');
+        else if (note) txt(c, note, 23, 79, fnt(700, 15, FONT_JP), warn ? '#FFE3E5' : '#3B2C00');
         else if (warn) txt(c, '強い揺れに警戒  ·  STRONG SHAKING EXPECTED', 23, 79, fnt(700, 15, FONT_JP), '#FFE3E5');
         else txt(c, 'EARTHQUAKE EARLY WARNING · FORECAST', 23, 78, fnt(600, 14, FONT_UI), '#3B2C00');
       } else txt(c, `第${rep._n}報${rep.final ? ' 最終' : ''}`, w - 18, 39, fnt(700, 18, FONT_JP), ink, 'right');
@@ -3526,10 +3595,18 @@ BOX.eew = {
       }
       return;
     }
-    txt(c, isEn ? 'EPICENTER' : '震源  EPICENTER', 22, 178, fnt(700, 14, LFm), '#7D8EA1');
-    const nsz = fitSize(c, nm, w - 44, nfam, 700, 30, 16);
+    // PLUM only: there's no hypocenter yet, just where the shaking is (〜で揺れ · 検知)
+    txt(c, rep.assumed ? (isEn ? 'SHAKING DETECTED IN' : '揺れを検知  SHAKING IN') : isEn ? 'EPICENTER' : '震源  EPICENTER', 22, 178, fnt(700, 14, LFm), '#7D8EA1');
+    const lp = en.it.data.lp !== false ? eewLpClass(E, rep) : 0, lpW = lp ? 96 : 0;
+    if (lp) {
+      const bx = w - 22 - lpW, by = 160;
+      rr(c, bx, by, lpW, 64, 8); c.fillStyle = LP_COL[lp - 1]; c.fill();
+      txt(c, isEn ? 'LONG-PERIOD' : '長周期階級', bx + lpW / 2, by + 19, fnt(700, isEn ? 11 : 13, LFm), lp === 2 ? '#2A2000' : '#FFFFFF', 'center');
+      txt(c, String(lp), bx + lpW / 2, by + 56, fnt(700, 34, FONT_NUM), lp === 2 ? '#2A2000' : '#FFFFFF', 'center');
+    }
+    const nsz = fitSize(c, nm, w - 44 - (lpW ? lpW + 12 : 0), nfam, 700, 30, 16);
     txt(c, nm, 22, 214, fnt(700, nsz, nfam), '#F2F6FA');
-    if (subLine) txt(c, subLine, 23, 240, fnt(500, 15, FONT_UI), '#8FA0B3');
+    if (subLine) txt(c, subLine, 23, 240, fnt(500, fitSize(c, subLine, w - 44 - (lpW ? lpW + 12 : 0), FONT_UI, 500, 15, 11), FONT_UI), '#8FA0B3');
     const yy = 270;
     txt(c, isEn ? 'MAGNITUDE' : '規模  MAG', 22, yy, fnt(700, 14, LFm), '#7D8EA1');
     txt(c, isEn ? 'DEPTH' : '深さ  DEPTH', 170, yy, fnt(700, 14, LFm), '#7D8EA1');
@@ -3543,7 +3620,12 @@ BOX.eew = {
     const mi = ee.pred ? ee.pred.maxIdx : -1;
     const prevMi = prev && prev.kind !== 'cancel' ? reportPred(env.world, E, prev)?.maxIdx : mi;
     const pop = prevMi !== mi && roll < 1 ? 1 + 0.14 * Math.sin(roll * Math.PI) : 1;
-    if (mi >= 0) iconPop(c, w - 22 - 72, yy + 8, 72, mi, pop); else emptyIcon(c, w - 22 - 72, yy + 8, 72);
+    if (rep.single) {
+      // 単独点処理のため震度推定なし: one station, no intensity forecast
+      rr(c, w - 22 - 108, yy + 8, 108, 72, 8); c.fillStyle = '#3A4654'; c.fill();
+      txt(c, isEn ? 'ONE STATION' : '単独点処理', w - 22 - 54, yy + 36, fnt(700, isEn ? 13 : 14, LFm), '#C9D2DC', 'center');
+      txt(c, isEn ? 'no estimate' : '震度推定なし', w - 22 - 54, yy + 62, fnt(700, isEn ? 15 : 16, LFm), '#FFFFFF', 'center');
+    } else if (mi >= 0) iconPop(c, w - 22 - 72, yy + 8, 72, mi, pop); else emptyIcon(c, w - 22 - 72, yy + 8, 72);
     let ay = 372;
     if (h >= 410) {
       const tg = parentNames(env, warnTargets(env, E, ee.pred));
@@ -3558,8 +3640,9 @@ BOX.eew = {
     }
     const ACC = ['IPF法（1点）', 'IPF法（2点）', 'IPF法（3点/4点）', 'IPF法（5点以上）'];
     const ACC_EN = ['IPF · 1 station', 'IPF · 2 stations', 'IPF · 3–4 stations', 'IPF · 5+ stations'];
-    const enA = rep.assumed ? 'Assumed hypocenter (PLUM)' : ACC_EN[rep.acc] + (rep.plum ? ' + PLUM' : '');
+    const enA = rep.assumed ? 'Assumed hypocenter (PLUM)' : rep.single ? 'One station, the location may be off' : ACC_EN[rep.acc] + (rep.plum ? ' + PLUM' : '');
     if (isEn) txt(c, 'ACCURACY  ' + enA, 22, ay, fnt(700, 14, FONT_UI), '#7D8EA1');
+    else if (rep.single) txt(c, '観測点が少ないため震源の精度が低い可能性があります', 22, ay, fnt(700, fitSize(c, '観測点が少ないため震源の精度が低い可能性があります', w - 44, FONT_JP, 700, 14, 11), FONT_JP), '#C9A86A');
     else {
       const jw = txt(c, '震源精度  ' + (rep.assumed ? '仮定震源要素（PLUM法）' : ACC[rep.acc] + (rep.plum ? ' ＋ PLUM法' : '')), 22, ay, fnt(700, 14, FONT_JP), '#7D8EA1');
       if (jw + mw(c, enA, fnt(500, 13, FONT_UI)) + 20 <= w - 44) txt(c, enA, w - 22, ay, fnt(500, 13, FONT_UI), '#5E6F82', 'right');
@@ -3744,8 +3827,10 @@ function reportHeader(c, env, en, E, w, opts) {
   const Ms = (opts.M !== null && opts.M !== undefined && opts.M !== '' && isFinite(+opts.M) ? +opts.M : ph.M).toFixed(1);
   txt(c, Ms, 26 + mwid, yy + 60, fM, '#FFFFFF');
   const dx = Math.max(170, 44 + mwid + mw(c, Ms, fM));
-  if (ph.depth < 5) txt(c, isEn ? 'Very shallow' : 'ごく浅い', dx, yy + 54, fnt(700, isEn ? 24 : 26, LFm), '#FFFFFF');
-  else { const ds = `${Math.round(ph.depth)}`; txt(c, ds, dx, yy + 60, fM, '#FFFFFF'); txt(c, 'km', dx + 5 + mw(c, ds, fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3'); }
+  // the depth as announced: JMA gives under 5 km as ごく浅い (Noto's 16 km went out that way at first)
+  const dShown = opts.depth === 'shallow' ? 0 : opts.depth !== null && opts.depth !== undefined && opts.depth !== '' && isFinite(+opts.depth) ? +opts.depth : ph.depth;
+  if (dShown < 5) txt(c, isEn ? 'Very shallow' : 'ごく浅い', dx, yy + 54, fnt(700, isEn ? 24 : 26, LFm), '#FFFFFF');
+  else { const ds = `${Math.round(dShown)}`; txt(c, ds, dx, yy + 60, fM, '#FFFFFF'); txt(c, 'km', dx + 5 + mw(c, ds, fM), yy + 60, fnt(600, 24, FONT_NUM), '#9FB0C3'); }
   if (opts.maxIdx !== undefined) {
     txt(c, isEn ? 'MAX INTENSITY' : '最大震度', w - 22, yy, fnt(700, 14, LFm), '#7D8EA1', 'right');
     const pop = env.prefs.reduced ? 1 : easeFn('backOut')(clamp((en.age - 0.2) / 0.5, 0, 1));
@@ -3788,9 +3873,15 @@ function reportLines(c, env, en, E, w) {
   const maxLines = 15;
   let shown = 0, total = 0;
   for (const g of E.ph.groups) total += g.count;
+  // a max intensity set lower than the quake's (an early report, before the strongest station was in) folds the
+  // stronger rows into it, the way the flash's "Strongest shown" does
+  const mo = it.data.maxOverride, cap = mo !== null && mo !== undefined && mo !== '' && isFinite(+mo) && +mo >= 0 ? +mo : null;
+  let lastIdx = null;
   outer:
   for (const g of E.ph.groups) {
-    let first = true;
+    const gi = cap !== null ? Math.min(g.idx, cap) : g.idx;
+    let first = gi !== lastIdx;
+    lastIdx = gi;
     for (const p of g.pars) {
       const P = DB.parents[p.par];
       const head = jpText ? P.ja : jp ? P.en : P.ab;
@@ -3798,7 +3889,7 @@ function reportLines(c, env, en, E, w) {
       const wrapped = wrapText(c, head + '  ' + names, nameFont, maxW);
       for (let li = 0; li < wrapped.length; li++) {
         if (lines.length >= maxLines) break outer;
-        lines.push({ idx: first ? g.idx : null, text: wrapped[li], head: li === 0 ? head : null, gap: first && lines.length > 0 });
+        lines.push({ idx: first ? gi : null, text: wrapped[li], head: li === 0 ? head : null, gap: first && lines.length > 0 });
         first = false;
       }
       shown += p.areas.length;
@@ -3821,7 +3912,7 @@ BOX.report = {
     const it = en.it;
     const maxIdx = it.data.maxOverride !== null && it.data.maxOverride !== undefined && it.data.maxOverride !== '' ? +it.data.maxOverride : shIdx(E.ph.maxObs);
     const isEn = EN();
-    reportHeader(c, env, en, E, w, { h: 410, title: isEn ? 'Earthquake Information' : '震源・震度に関する情報', sub: isEn ? 'EPICENTER & SEISMIC INTENSITY' : 'EARTHQUAKE & SEISMIC INTENSITY INFORMATION', maxIdx, tsunami: reportTsunami(env, en, E), M: it.data.M });
+    reportHeader(c, env, en, E, w, { h: 410, title: isEn ? 'Earthquake Information' : '震源・震度に関する情報', sub: isEn ? 'EPICENTER & SEISMIC INTENSITY' : 'EARTHQUAKE & SEISMIC INTENSITY INFORMATION', maxIdx, tsunami: reportTsunami(env, en, E), M: it.data.M, depth: it.data.depth });
     const L = reportLines(c, env, en, E, w);
     const y2 = 424;
     const lh = 26;
@@ -3857,7 +3948,7 @@ BOX.epicenter = {
   draw(c, env, en, w, h) {
     const E = EOf(env, en);
     const isEn = EN();
-    reportHeader(c, env, en, E, w, { h, title: isEn ? 'Epicenter Information' : '震源に関する情報', sub: isEn ? 'HYPOCENTER & MAGNITUDE · INTENSITY TO FOLLOW' : 'EARTHQUAKE INFORMATION · EPICENTER', tsunami: reportTsunami(env, en, E), M: en.it.data.M });
+    reportHeader(c, env, en, E, w, { h, title: isEn ? 'Epicenter Information' : '震源に関する情報', sub: isEn ? 'HYPOCENTER & MAGNITUDE · INTENSITY TO FOLLOW' : 'EARTHQUAKE INFORMATION · EPICENTER', tsunami: reportTsunami(env, en, E), M: en.it.data.M, depth: en.it.data.depth });
   },
 };
 function flashRows(env, E) {
@@ -4369,12 +4460,12 @@ function autoCam(env, lay) {
       cam = mixCam(cam, c, ease(clamp((tau - focusTime(E)) / 1.6, 0, 1)));
     }
   }
-  const rep = sc.map.report || sc.map.flash;
+  const rep = sc.map.report || sc.map.flash || sc.map.away;
   if (rep) {
     const E = rep.E;
     const f = focusOf(w.DB, E, true);
-    const r = Math.max(sc.map.report ? E.ph.fitReport : Math.max(E.ph.fitReport, E.ph.fit * 0.9), f.off * 1.2 + 80);
-    cam = mixCam(cam, camOf(f.lat, f.lon, r, reg), ease(clamp(rep.age / 1.7, 0, 1)));
+    const r = Math.max(isReportCam(sc, rep) ? E.ph.fitReport : Math.max(E.ph.fitReport, E.ph.fit * 0.9), f.off * 1.2 + 80);
+    cam = mixCam(cam, camOf(f.lat, f.lon, r, reg), ease(clamp(rep.age / 1.7, 0, 1)) * (rep.away ? rep.w : 1));
   }
   return cam;
 }
@@ -4383,6 +4474,8 @@ function autoCam(env, lay) {
 // frame with the camera's own snap (its easing over the zoom-in time), or, with detection zoom off, the
 // follow camera's glide. Each quake in the frame keeps its own framing (the detection zoom and its steps out,
 // or the stepped follow). With one quake it's exactly the single-quake camera; with nothing going it holds.
+// a flash or report that just stepped aside still holds the camera for a moment as it eases back
+const isReportCam = (sc, rep) => (rep.away ? rep.isReport : rep === sc.map.report);
 function quakeDone(E) {
   if (E._done !== undefined) return E._done;
   const ph = E.ph;
@@ -4427,7 +4520,7 @@ function fitAllCam(env, reg, withReport) {
   const evs = [];
   for (const q of qs) evs.push({ t: q.tIn, q, on: true }, { t: q.tOut, q, on: false });
   evs.sort((a, b) => a.t - b.t);
-  const rep = withReport ? sc.map.report || sc.map.flash : null;
+  const rep = withReport ? sc.map.report || sc.map.flash || sc.map.away : null;
   const repE = rep ? rep.E : null, tRep = rep ? tau - rep.age : Infinity;
   // before anything: detection zoom holds the viewer's framing, the follow camera starts on the first quake
   let cam = camFromView(R.view);
@@ -4447,7 +4540,7 @@ function fitAllCam(env, reg, withReport) {
   if (!rep) return cam;
   // the report's framing (as the single-quake camera does it), widened to keep the epicenters that were going
   const E = repE, f = focusOf(w.DB, E, true);
-  const r = Math.max(sc.map.report ? E.ph.fitReport : Math.max(E.ph.fitReport, E.ph.fit * 0.9), f.off * 1.2 + 80) / kmPerWU(f.lat);
+  const r = Math.max(isReportCam(sc, rep) ? E.ph.fitReport : Math.max(E.ph.fitReport, E.ph.fit * 0.9), f.off * 1.2 + 80) / kmPerWU(f.lat);
   const fx = wxOf(n360(f.lon)), fy = wyOf(f.lat);
   let rb = [fx - r, fy - r, fx + r, fy + r];
   for (const q of atRep || going) {
@@ -4455,7 +4548,7 @@ function fitAllCam(env, reg, withReport) {
     const p = 140 / kmPerWU(q.E.ph.lat), ex = wxOf(n360(q.E.ph.lon)), ey = wyOf(q.E.ph.lat);
     rb = boxUnion(rb, [ex - p, ey - p, ex + p, ey + p]);
   }
-  return mixCam(cam, boxCam(rb, reg), ease(clamp(rep.age / 1.7, 0, 1)) * (1 - others));
+  return mixCam(cam, boxCam(rb, reg), ease(clamp(rep.age / 1.7, 0, 1)) * (1 - others) * (rep.away ? rep.w : 1));
 }
 function keyTarget(env, k, reg) {
   const w = env.world, E = w.evMap.get(k.ev) || w.main;
@@ -7094,13 +7187,44 @@ function edRender() {
   inner.append(h('div', { class: 'tl-ph', id: 'tlPh', style: `left:${ED.labelW + tx(S.tau)}px` }));
   edUndoUI(); edSelUI();
 }
-// where a flash or report steps aside for a new quake: the rest of its bar is hatched
+// what a flash or report steps aside for, and when it comes back
+function giveWayCtl(D) {
+  const mode = () => (D.giveWay === false ? 'off' : D.giveWay === 'quakes' ? 'quakes' : 'all');
+  const back = () => (D.giveBack === 'never' ? 'never' : String(typeof D.giveBack === 'number' ? D.giveBack : 8));
+  return [
+    fRow('Steps aside for', cSel(mode, (v) => edEdit(() => { D.giveWay = v === 'off' ? false : v === 'quakes' ? 'quakes' : true; }, { structural: true }),
+      [['all', 'Anything new (quakes, every EEW update)'], ['quakes', 'Other quakes only'], ['off', 'Nothing, it stays up']]),
+    'Like JMA viewers: a new EEW or quake takes the screen, then this comes back once it’s quiet.'),
+    fRow('Comes back', cSel(back, (v) => edEdit(() => { D.giveBack = v === 'never' ? 'never' : +v; }, { structural: true }),
+      [['4', 'After 4 s of quiet'], ['8', 'After 8 s of quiet'], ['12', 'After 12 s of quiet'], ['20', 'After 20 s of quiet'], ['never', 'It doesn’t']])),
+  ];
+}
+// where a flash or report steps aside (a new quake, an EEW update): each stretch it's away is hatched
 function tlCut(it, x0, x1) {
-  const cut = S.world && S.world.cuts && S.world.cuts.get(it.id);
-  if (!cut) return null;
-  const cx = tx(cut.t) - x0;
-  if (cx <= 0 || cx >= x1 - x0) return null;
-  return h('div', { class: 'tl-cut', style: `left:${cx}px`, title: `Gives way at ${fmtT(cut.t)}: ${evIndex(cut.ev)} is detected. Turn off “Give way” in its settings to keep it up.` });
+  const gl = S.world && S.world.gaps && S.world.gaps.get(it.id);
+  if (!gl) return null;
+  const out = [];
+  for (const g of gl) {
+    const a = tx(g.t) - x0, b = g.t1 === null ? x1 - x0 : Math.min(tx(g.t1), x1) - x0;
+    if (a >= x1 - x0 || b <= Math.max(a, 0)) continue;
+    const why = gapWhy(g);
+    out.push(h('div', { class: 'tl-cut' + (g.t1 === null ? ' end' : ''), style: `left:${Math.max(0, a)}px;width:${b - Math.max(0, a)}px`,
+      title: `Steps aside at ${fmtT(g.t)} for ${why}${g.t1 === null ? ' and doesn’t come back' : `, back at ${fmtT(g.t1)}`}. “Give way” in its settings changes this.` }));
+  }
+  return out;
+}
+function gapWhy(g) {
+  const evs = [...new Set(g.why.map((s) => s.ev))];
+  const parts = evs.map((id) => {
+    const ws = g.why.filter((s) => s.ev === id);
+    const n = ws.filter((s) => s.why === 'eew').length, c = ws.some((s) => s.why === 'cancel'), dt = ws.some((s) => s.why === 'det');
+    const bits = [];
+    if (dt) bits.push('detected');
+    if (n) bits.push(n === 1 ? 'an EEW' : n + ' EEW updates');
+    if (c) bits.push('a cancel');
+    return `${evIndex(id)} (${bits.join(', ')})`;
+  });
+  return parts.join(' and ');
 }
 function edPlayhead() {
   const ph = $('#tlPh');
@@ -8107,6 +8231,7 @@ function inspContent(it, D, set) {
     case 'eew': return fg('Content',
       cChk(() => D.standby, set(D, 'standby', { structural: true }), 'Show the standby panel before the first report'),
       cChk(() => D.targets, set(D, 'targets'), 'List the warning target areas'),
+      cChk(() => D.lp !== false, (v) => edEdit(() => { D.lp = v; }), 'Show the long-period class (Japan)', 'JMA’s EEW gives an estimated long-period ground motion class (長周期地震動階級) since 2023.'),
       fRow('Size', cSel(() => D.compact, set(D, 'compact'), [['auto', 'Full, or a slim strip under an earlier EEW'], ['off', 'Always full'], ['on', 'Always compact'], ['mini', 'Always a slim strip']])),
       h('p', { class: 'note', text: 'The panel reads the quake’s EEW reports (the EEW row). Edit a report to change its magnitude, depth or warning level.' }));
     case 'countdown': {
@@ -8128,17 +8253,19 @@ function inspContent(it, D, set) {
       return g;
     }
     case 'flash': return fg('Content', h('p', { class: 'note', text: 'Lists prefectures or states with intensity 3 and up, straight from the quake. The map shades them too.' }),
-      cChk(() => D.giveWay !== false, (v) => edEdit(() => { D.giveWay = v; }, { structural: true }), 'Give way to new quakes', 'If another quake is detected while this is up, it gets out of the way so the new quake shows, and doesn’t come back.'),
+      ...giveWayCtl(D),
       fRow('Strongest shown', cSel(() => (D.cap === null || D.cap === undefined ? '' : String(D.cap)), (v) => edEdit(() => { D.cap = v === '' ? null : +v; }), SH_OPTS(false)),
         'A first flash often goes out before the strongest station reports in. Noto’s said 6 Upper at 16:11 and 7 at 16:14, so use two flashes.'));
     case 'epicenter': return fg('Content', h('p', { class: 'note', text: `Origin time, epicenter, magnitude and depth, with the tsunami line. Use it before the intensity report, like JMA’s ${enUI() ? 'hypocenter information' : '震源に関する情報'}.` }),
-      fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' }), 'What JMA had announced by then (Noto went out as M7.4, then M7.6).'));
+      fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' }), 'What JMA had announced by then (Noto went out as M7.4, then M7.6).'),
+        fRow('Depth shown', cText(() => (D.depth === null || D.depth === undefined ? '' : String(D.depth)), (v) => edEdit(() => { const x = String(v).trim(); D.depth = x === '' ? null : /^(s|shallow|ごく浅い|very shallow)$/i.test(x) ? 'shallow' : isFinite(+x) ? +x : null; }, { coalesce: it.id + 'D' }), { ph: 'Empty = the quake’s own. “shallow” = ごく浅い' }), 'JMA first gave Noto’s depth as ごく浅い (very shallow).'));
     case 'longperiod': return fg('Content', h('p', { class: 'note', text: 'Automatic from the quake’s size and distance, in JMA long-period classes 1–4.' }));
     case 'report': {
       const g = fg('Content',
         fRow('Max intensity', cSel(() => (D.maxOverride === null || D.maxOverride === undefined ? '' : String(D.maxOverride)), (v) => edEdit(() => { D.maxOverride = v === '' ? null : +v; }), SH_OPTS(true))),
         fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' })),
-        cChk(() => D.giveWay !== false, (v) => edEdit(() => { D.giveWay = v; }, { structural: true }), 'Give way to new quakes', 'If another quake is detected while this is up, it gets out of the way so the new quake shows, and doesn’t come back.'),
+        fRow('Depth shown', cText(() => (D.depth === null || D.depth === undefined ? '' : String(D.depth)), (v) => edEdit(() => { const x = String(v).trim(); D.depth = x === '' ? null : /^(s|shallow|ごく浅い|very shallow)$/i.test(x) ? 'shallow' : isFinite(+x) ? +x : null; }, { coalesce: it.id + 'D' }), { ph: 'Empty = the quake’s own. “shallow” = ごく浅い' }), 'JMA first gave Noto’s depth as ごく浅い (very shallow).'),
+        ...giveWayCtl(D),
         fRow('Tsunami line', cArea(() => D.tsunamiText, set(D, 'tsunamiText'), { rows: 2, ph: 'Empty = automatic. Line 1 Japanese, line 2 English.' })),
         fRow('List', cSel(() => D.list, set(D, 'list', { structural: true }), [['auto', 'Observed intensities (automatic)'], ['custom', 'My own lines']])));
       if (D.list === 'custom') {
@@ -8302,6 +8429,7 @@ function inspReport(r) {
     fRow('Accuracy', cSel(() => String(r.acc), (v) => set('acc')(+v), [['0', 'IPF · 1 station'], ['1', 'IPF · 2 stations'], ['2', 'IPF · 3–4 stations'], ['3', 'IPF · 5+ stations']])),
     cChk(() => r.plum, set('plum'), enUI() ? 'PLUM method' : 'PLUM method (+ PLUM法)'),
     cChk(() => !!r.assumed, set('assumed'), enUI() ? 'Assumed hypocenter (PLUM only)' : 'Assumed hypocenter (仮定震源要素)', 'JMA’s placeholder when only PLUM has fired: no size or depth, no wave circles, and the shading comes from the real quake.'),
+    cChk(() => !!r.single, set('single'), enUI() ? 'Single station (no intensity estimate)' : 'Single station (単独点処理)', 'One station has fired: JMA sends the location and size but no intensity forecast, and warns the location may be off. A lone false trigger often looks like this before it’s cancelled.'),
     cChk(() => r.final, set('final', { structural: true }), enUI() ? 'Final report' : 'Final report (最終報)'),
     fRow('Max forecast', cSel(() => (r.maxOverride === null || r.maxOverride === undefined ? '' : String(r.maxOverride)), (v) => edEdit(() => { r.maxOverride = v === '' ? null : +v; if (ev) ev.eewAuto = false; }), SH_OPTS(true)), 'Overrides only the big icon. The map shading follows magnitude, depth and place.'),
     h('p', { class: 'note', text: 'Editing a report switches this quake to hand-made reports so your changes stick.' })));
@@ -8423,6 +8551,7 @@ function problemsFor(DB, doc, world) {
     const t = Math.min(td, E.reports[0] ? E.reports[0].t : Infinity);
     if (isFinite(t)) starts.push({ E, t });
   }
+  starts.sort((a, b) => a.t - b.t);
 
   for (const it of live) {
     // boxes pointing at a quake that's gone
@@ -8482,6 +8611,25 @@ function problemsFor(DB, doc, world) {
       const s = starts.find((x) => x.E.id !== E.id && x.t > it.t0 && (it.t1 === null || x.t < it.t1));
       if (s) add('warn', `${itemTitle(it)} hides ${evName(s.E.id)}`, `It covers the map when ${evName(s.E.id)} is detected at ${fmtT(s.t)}, so the new quake can't be seen.`, { t: s.t, sel: { kind: 'item', id: it.id },
         fix: { label: 'Let it give way', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.data.giveWay = true; } } });
+    }
+    // a map takeover that keeps stepping aside (for EEW updates or new quakes) and is hardly up
+    if ((it.type === 'flash' || it.type === 'report') && it.t1 !== null && world.gaps && world.gaps.get(it.id)) {
+      const gl = world.gaps.get(it.id), dur = it.t1 - it.t0;
+      let away = 0, lastT = it.t0;
+      for (const g of gl) { away += Math.min(g.t1 === null ? it.t1 : g.t1, it.t1) - g.t; for (const s of g.why) lastT = Math.max(lastT, s.t); }
+      const up = dur - away;
+      if (up < Math.min(6, dur * 0.25)) {
+        // the first moment after it that's been quiet long enough for it to come back
+        const back = isFinite(giveBackOf(it.data)) ? giveBackOf(it.data) : 8, mine = E.id;
+        let qt = lastT + back;
+        for (const s of world.gapTrig || []) {
+          if (s.t <= lastT || (s.ev === mine && (s.why === 'det' || it.data.giveWay === 'quakes'))) continue;
+          if (s.t <= qt) qt = s.t + back; else break;
+        }
+        const quiet = +qt.toFixed(2);
+        add('warn', `${itemTitle(it)} is hardly seen`, `It steps aside for new EEW reports and quakes, so it's only up for ${r1(Math.max(0, up))} s of its ${r1(dur)} s. Things go quiet at ${fmtT(quiet)}.`, { t: it.t0, sel: { kind: 'item', id: it.id },
+          fix: { label: 'Start it once things go quiet', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) { const dd = quiet - x.t0; x.t0 = quiet; if (x.t1 !== null) x.t1 = +(x.t1 + dd).toFixed(2); } } } });
+      }
     }
     // title cards slide every box away: one over a new quake hides it
     if (it.type === 'card') {
@@ -11277,7 +11425,7 @@ async function boot() {
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
     S, R, AU, REC, ED,
-    api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, fitView, setViewPreset,
+    api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, scene: (t) => sceneAt(S.world, t ?? S.tau, S.prefs), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edSeqOpen, edBuildSequence, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,
