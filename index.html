@@ -341,7 +341,25 @@ kbd { font-family: var(--font-num); font-size: 12px; border: 1px solid var(--lin
 .seq .check small.hint { display: block; color: var(--faint); font-size: 12px; margin-top: 1px; }
 .seq .check.sub { margin-left: 26px; }
 .seq .check.off { opacity: 0.45; }
+.tl-cut { position: absolute; top: 0; bottom: 0; right: 0; border-left: 2px solid rgba(255,255,255,.85); background: repeating-linear-gradient(135deg, rgba(10,14,20,.55) 0 4px, rgba(10,14,20,.2) 4px 8px); pointer-events: auto; }
 .seq-pop { width: 380px; padding: 10px 12px; }
+.prob-btn .cnt { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: rgba(255,255,255,.12); font-variant-numeric: tabular-nums; }
+.prob-btn .ico { opacity: .55; }
+.prob-btn.meh { border-color: #F2B000; } .prob-btn.meh .cnt { background: #F2B000; color: #14100A; } .prob-btn.meh .ico { opacity: 1; color: #F2B000; }
+.prob-btn.bad { border-color: #FF5A64; } .prob-btn.bad .cnt { background: #FF5A64; color: #fff; } .prob-btn.bad .ico { opacity: 1; color: #FF5A64; }
+.prob-pop { width: 480px; max-width: calc(100vw - 24px); max-height: 62vh; overflow: auto; padding: 10px 12px; }
+.prob-pop > .row { margin: 4px 0 8px; }
+.prob-list { display: flex; flex-direction: column; gap: 6px; }
+.prob { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,.04); cursor: pointer; }
+.prob:hover { background: rgba(255,255,255,.08); }
+.prob .sev { justify-self: start; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--c); border: 1px solid var(--c); border-radius: 5px; padding: 1px 6px; margin-top: 2px; }
+.prob .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.prob .tt { font-weight: 700; line-height: 1.3; }
+.prob .dd { font-size: 12.5px; opacity: .75; line-height: 1.4; }
+.prob-pop .btn.fixb, .prob-pop .btn.fixall { display: inline-flex; flex-direction: row; width: auto; align-self: flex-start; margin-top: 6px; white-space: nowrap; padding: 4px 11px; font-size: 12.5px; font-weight: 600; border-radius: 6px; }
+.prob-pop .btn.fixb { background: #1A2A3D; border: 1px solid #2E4560; color: var(--text); }
+.prob-pop .btn.fixb:hover { background: #24384F; }
+.prob-pop .btn.fixall { background: var(--accent); color: #06121F; border: 0; }
 .seq-pop .seq .check { padding: 5px 0; }
 .seq-pop > .row { margin-top: 8px; }
 .seq-mh { font-family: var(--font-num); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 12px 0 4px; }
@@ -662,6 +680,10 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
         <button class="btn ghost icon toggle" id="btnTips" type="button" aria-pressed="true" aria-label="Timeline tips" title="Timeline tips">?</button>
       </div>
       <span class="grow" aria-hidden="true"></span>
+      <div class="menu-wrap">
+        <button class="btn prob-btn" id="btnProblems" type="button" aria-haspopup="true" aria-expanded="false" hidden><span class="ico" aria-hidden="true">⚠</span> Problems <span class="cnt" id="probCount">✓</span></button>
+        <div class="menu pop prob-pop" id="probPop" hidden></div>
+      </div>
       <div class="menu-wrap">
         <button class="btn" id="btnSeq" type="button" aria-haspopup="true" aria-expanded="false" title="Put a quake's boxes on the timeline in the order a real broadcast shows them">Realistic sequence…</button>
         <div class="menu pop seq-pop" id="seqPop" hidden></div>
@@ -2529,6 +2551,26 @@ function buildWorld(DB, doc, prefs) {
     });
   }
   const items = doc.items.filter((it) => !it.hidden).slice().sort((a, b) => a.t0 - b.t0 || TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
+  // A flash or report takes over the whole map. When another quake is detected (or its first EEW goes out) while one
+  // is up, it gets out of the way so the new quake shows, and doesn't come back. 'Give way' off keeps it up.
+  const cuts = new Map();
+  const starts = [];
+  for (const E of evs) {
+    if (E.ev.shaking === false) continue;
+    const td = E.ph.tDet !== null && E.ph.tDet !== undefined ? E.ev.t0 + E.ph.tDet : Infinity;
+    const t = Math.min(td, E.reports[0] ? E.reports[0].t : Infinity);
+    if (isFinite(t)) starts.push({ E, t });
+  }
+  for (const it of items) {
+    if ((it.type !== 'flash' && it.type !== 'report') || it.data.giveWay === false) continue;
+    const mine = it.ev && it.ev !== 'auto' ? it.ev : evs[0] && evs[0].id;
+    let cut = null;
+    for (const s of starts) {
+      if (s.E.id === mine || s.t <= it.t0 + 0.05 || (it.t1 !== null && s.t >= it.t1)) continue;
+      if (cut === null || s.t < cut.t) cut = { t: +s.t.toFixed(2), ev: s.E.id };
+    }
+    if (cut) cuts.set(it.id, cut);
+  }
   // timeline end
   let tEnd = 20;
   for (const r of doc.eew) tEnd = Math.max(tEnd, r.t + 12);
@@ -2538,7 +2580,7 @@ function buildWorld(DB, doc, prefs) {
   if (doc.duration) tEnd = doc.duration;
   const main = evs[0];
   const tz = resolveTz(doc.clock.tz, main.ph.tz);
-  const world = { DB, doc, evs, evMap, items, tEnd, tz, main, sounds: [], sensors: [] };
+  const world = { cuts, DB, doc, evs, evMap, items, tEnd, tz, main, sounds: [], sensors: [] };
   // custom sensors' responses per event
   world.sensors = doc.sensors.custom.map((s) => ({ s, wx: wxOf(n360(s.lon)), wy: wyOf(s.lat), resp: evs.map((E) => pointResponse(E.ph, s.lat, n360(s.lon), s.amp)) }));
   world.my = doc.my ? { ...doc.my, area: areaAt(DB, doc.my.lon, doc.my.lat) } : null;
@@ -2713,7 +2755,7 @@ function itemAnim(it, prefs) {
     ease: a.ease && a.ease !== 'default' ? a.ease : g.ease,
   };
 }
-function itemPresence(it, tau, prefs, t0) {
+function itemPresence(it, tau, prefs, t0, endAt) {
   const A = itemAnim(it, prefs);
   const start = t0 ?? it.t0;
   if (tau < start) return null;
@@ -2721,9 +2763,10 @@ function itemPresence(it, tau, prefs, t0) {
   const din = A.in === 'none' || prefs.reduced ? 0 : A.dur;
   const xin = din > 0 ? clamp((tau - start) / din, 0, 1) : 1;
   let pin = f(xin), p = clamp(pin, 0, 1), phase = xin < 1 ? 'in' : 'hold', pout = 0;
-  if (it.t1 !== null && it.t1 !== undefined && tau >= it.t1) {
+  const end = endAt ?? it.t1;
+  if (end !== null && end !== undefined && tau >= end) {
     const dout = A.out === 'none' || prefs.reduced ? 0 : A.dur * 0.75;
-    const xo = dout > 0 ? clamp((tau - it.t1) / dout, 0, 1) : 1;
+    const xo = dout > 0 ? clamp((tau - end) / dout, 0, 1) : 1;
     if (xo >= 1) return null;
     pout = f(xo);
     p = Math.min(p, 1 - clamp(pout, 0, 1));
@@ -2753,7 +2796,8 @@ function sceneAt(world, tau, prefs) {
       if (!first) continue;
       t0 = Math.max(t0, first.t);
     }
-    const pr = itemPresence(it, tau, prefs, t0);
+    const cut = world.cuts && world.cuts.get(it.id);
+    const pr = itemPresence(it, tau, prefs, t0, cut ? cut.t : undefined);
     if (!pr) continue;
     sc.items.push({ it, ...pr, ev: ee });
     if (it.type === 'report' || it.type === 'flash') {
@@ -7013,7 +7057,8 @@ function edRender() {
       const light = lumOf(hexRgb(col)) > 0.62;
       lane.append(h('div', { class: 'tl-bar' + (light ? ' light' : '') + (it.t1 === null ? ' open' : '') + (it.hidden ? ' off' : '') + (sel ? ' sel' : ''), 'data-k': 'item:' + it.id,
         style: `left:${x0}px;width:${Math.max(8, x1 - x0)}px;--c:${col}`, title: `${itemTitle(it)} · ${fmtT(it.t0)} → ${it.t1 === null ? 'stays on' : fmtT(it.t1)}` },
-        h('span', { text: itemTitle(it) }), h('div', { class: 'h l', title: 'Drag to change when it appears' }), it.t1 === null ? null : h('div', { class: 'h r', title: 'Drag to change when it goes away' })));
+        h('span', { text: itemTitle(it) }), h('div', { class: 'h l', title: 'Drag to change when it appears' }), it.t1 === null ? null : h('div', { class: 'h r', title: 'Drag to change when it goes away' }),
+        tlCut(it, x0, x1)));
       inner.append(row);
     }
   }
@@ -7048,6 +7093,14 @@ function edRender() {
   inner.prepend(...ED.marks.map((m) => h('div', { class: 'tl-guide', style: `left:${ED.labelW + tx(m.t)}px;--c:${m.c}` })));
   inner.append(h('div', { class: 'tl-ph', id: 'tlPh', style: `left:${ED.labelW + tx(S.tau)}px` }));
   edUndoUI(); edSelUI();
+}
+// where a flash or report steps aside for a new quake: the rest of its bar is hatched
+function tlCut(it, x0, x1) {
+  const cut = S.world && S.world.cuts && S.world.cuts.get(it.id);
+  if (!cut) return null;
+  const cx = tx(cut.t) - x0;
+  if (cx <= 0 || cx >= x1 - x0) return null;
+  return h('div', { class: 'tl-cut', style: `left:${cx}px`, title: `Gives way at ${fmtT(cut.t)}: ${evIndex(cut.ev)} is detected. Turn off “Give way” in its settings to keep it up.` });
 }
 function edPlayhead() {
   const ph = $('#tlPh');
@@ -7444,6 +7497,8 @@ function edCloseMenu() {
   if (p && !p.hidden) { p.hidden = true; $('#btnResetAll').setAttribute('aria-expanded', 'false'); closed = true; }
   const q = $('#seqPop');
   if (q && !q.hidden) { q.hidden = true; $('#btnSeq').setAttribute('aria-expanded', 'false'); closed = true; }
+  const pp = $('#probPop');
+  if (pp && !pp.hidden) { pp.hidden = true; $('#btnProblems').setAttribute('aria-expanded', 'false'); closed = true; }
   return closed;
 }
 function boxTypeItems(t) {
@@ -8073,6 +8128,7 @@ function inspContent(it, D, set) {
       return g;
     }
     case 'flash': return fg('Content', h('p', { class: 'note', text: 'Lists prefectures or states with intensity 3 and up, straight from the quake. The map shades them too.' }),
+      cChk(() => D.giveWay !== false, (v) => edEdit(() => { D.giveWay = v; }, { structural: true }), 'Give way to new quakes', 'If another quake is detected while this is up, it gets out of the way so the new quake shows, and doesn’t come back.'),
       fRow('Strongest shown', cSel(() => (D.cap === null || D.cap === undefined ? '' : String(D.cap)), (v) => edEdit(() => { D.cap = v === '' ? null : +v; }), SH_OPTS(false)),
         'A first flash often goes out before the strongest station reports in. Noto’s said 6 Upper at 16:11 and 7 at 16:14, so use two flashes.'));
     case 'epicenter': return fg('Content', h('p', { class: 'note', text: `Origin time, epicenter, magnitude and depth, with the tsunami line. Use it before the intensity report, like JMA’s ${enUI() ? 'hypocenter information' : '震源に関する情報'}.` }),
@@ -8082,6 +8138,7 @@ function inspContent(it, D, set) {
       const g = fg('Content',
         fRow('Max intensity', cSel(() => (D.maxOverride === null || D.maxOverride === undefined ? '' : String(D.maxOverride)), (v) => edEdit(() => { D.maxOverride = v === '' ? null : +v; }), SH_OPTS(true))),
         fRow('Magnitude shown', cText(() => (D.M === null || D.M === undefined ? '' : String(D.M)), (v) => edEdit(() => { D.M = v === '' || !isFinite(+v) ? null : +v; }, { coalesce: it.id + 'M' }), { ph: 'Empty = the quake’s own' })),
+        cChk(() => D.giveWay !== false, (v) => edEdit(() => { D.giveWay = v; }, { structural: true }), 'Give way to new quakes', 'If another quake is detected while this is up, it gets out of the way so the new quake shows, and doesn’t come back.'),
         fRow('Tsunami line', cArea(() => D.tsunamiText, set(D, 'tsunamiText'), { rows: 2, ph: 'Empty = automatic. Line 1 Japanese, line 2 English.' })),
         fRow('List', cSel(() => D.list, set(D, 'list', { structural: true }), [['auto', 'Observed intensities (automatic)'], ['custom', 'My own lines']])));
       if (D.list === 'custom') {
@@ -8287,7 +8344,7 @@ function edInit() {
   document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap, #ctxMenu')) edCloseMenu(); });
   // dropdowns stay pinned to their buttons when the page moves; a right-click menu just closes
   const repin = () => {
-    for (const [m, b, al] of [['#addMenu', '#btnAddBox', 'left'], ['#resetPop', '#btnResetAll', 'right'], ['#seqPop', '#btnSeq', 'right']]) {
+    for (const [m, b, al] of [['#addMenu', '#btnAddBox', 'left'], ['#resetPop', '#btnResetAll', 'right'], ['#seqPop', '#btnSeq', 'right'], ['#probPop', '#btnProblems', 'right']]) {
       const el = $(m);
       if (el && !el.hidden) popPlace(el, $(b), al);
     }
@@ -8318,6 +8375,8 @@ function edInit() {
     if (first) first.focus();
   });
   $('#btnSeq').addEventListener('click', (e) => { e.stopPropagation(); if (!$('#seqPop').hidden) { edCloseMenu(); return; } edSeqOpen(); });
+  $('#btnProblems').addEventListener('click', (e) => { e.stopPropagation(); if (!$('#probPop').hidden) { edCloseMenu(); return; } problemsOpen(); });
+  $('#probPop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); edCloseMenu(); $('#btnProblems').focus(); } });
   $('#seqPop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); edCloseMenu(); $('#btnSeq').focus(); } });
   for (const b of $$('#resetPop [data-reset]')) b.addEventListener('click', (e) => { e.stopPropagation(); edCloseMenu(); edResetAll(b.dataset.reset); });
   let tip = null;
@@ -8338,6 +8397,198 @@ function edInit() {
     e.preventDefault();
     edZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX);
   }, { passive: false });
+}
+
+// ============================================================== Quaker v2 · problems
+// Checks an Advanced timeline for things that would look wrong or never show, the way a real broadcast would
+// run them. Each problem says what's off and where; most come with a fix. The Problems button on the timeline
+// shows the count (red for things that break, amber for things that look off).
+const PROB = { list: [], sig: '' };
+
+function problemsFor(DB, doc, world) {
+  const out = [];
+  if (!doc || !world) return out;
+  const add = (sev, title, detail, o = {}) => out.push({ sev, title, detail, ...o });
+  const evName = (id) => { const i = doc.events.findIndex((e) => e.id === id); const E = world.evMap.get(id); return `E${i + 1}${E ? ' ' + (enUI() ? E.name.en || E.name.ja : E.name.ja) : ''}`; };
+  const evOf = (it) => (it.ev && it.ev !== 'auto' ? world.evMap.get(it.ev) : world.main);
+  const live = doc.items.filter((it) => !it.hidden);
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const autoTimesFor = (it) => { const c = JSON.parse(JSON.stringify(doc)); autoTimeItems(DB, c); return c.items.find((x) => x.id === it.id); };
+  const fixTimes = (it) => ({ label: 'Put it on its automatic time', run: (d) => { const a = autoTimesFor(it); const x = d.items.find((y) => y.id === it.id); if (a && x) { x.t0 = a.t0; x.t1 = a.t1; } } });
+  // detection moments, for boxes that hide the map
+  const starts = [];
+  for (const E of world.evs) {
+    if (E.ev.shaking === false) continue;
+    const td = E.ph.tDet !== null && E.ph.tDet !== undefined ? E.ev.t0 + E.ph.tDet : Infinity;
+    const t = Math.min(td, E.reports[0] ? E.reports[0].t : Infinity);
+    if (isFinite(t)) starts.push({ E, t });
+  }
+
+  for (const it of live) {
+    // boxes pointing at a quake that's gone
+    if (it.ev && it.ev !== 'auto' && !world.evMap.get(it.ev)) {
+      add('error', `${itemTitle(it)} points at a quake that was deleted`, 'It has nothing to show.', { t: it.t0, sel: { kind: 'item', id: it.id },
+        fix: { label: 'Point it at the first quake', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.ev = d.events[0].id; } } });
+      continue;
+    }
+    const E = evOf(it);
+    if (!E) continue;
+    const first = E.reports[0], last = E.reports[E.reports.length - 1];
+    // S-wave countdown and the EEW panel come in with the quake's first EEW report: not before, not after
+    if ((it.type === 'countdown' || it.type === 'eew') && !it.data.standby) {
+      const what = it.type === 'eew' ? 'EEW panel' : 'S-wave countdown';
+      if (!first) {
+        add('error', `The ${what} never appears`, `${evName(E.id)} has no EEW reports, so there's nothing to show.`, { t: it.t0, sel: { kind: 'item', id: it.id },
+          fix: E.ev.shaking !== false ? { label: 'Generate its EEW reports', run: (d) => { const ev = d.events.find((e) => e.id === E.id); if (ev) { ev.eewAuto = true; refreshAutoEEW(DB, d, ev.id); } } } : { label: 'Remove the box', run: (d) => { d.items = d.items.filter((y) => y.id !== it.id); } } });
+        continue;
+      }
+      if (it.t0 > first.t + 0.5) {
+        add('warn', `The ${what} comes in ${r1(it.t0 - first.t)} s late`, `It should show up the moment ${evName(E.id)}'s first EEW report goes out (${fmtT(first.t)}), not ${fmtT(it.t0)}.`, { t: first.t, sel: { kind: 'item', id: it.id },
+          fix: { label: 'Start it with the first report', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.t0 = +first.t.toFixed(2); } } });
+      }
+    }
+    // a countdown on standby (発表なし until the reports come) starts when the quake is first detected
+    if (it.type === 'countdown' && it.data.standby && E.ph.tDet !== null && E.ph.tDet !== undefined) {
+      const det = E.ev.t0 + E.ph.tDet, ref = Math.max(det, T_START);
+      if (Math.abs(it.t0 - ref) > 0.5) {
+        const late = it.t0 > ref;
+        add('warn', `The S-wave countdown comes in ${r1(Math.abs(it.t0 - ref))} s ${late ? 'late' : 'early'}`, late ? `It should show up the moment ${evName(E.id)} is detected (${fmtT(ref)}), not ${fmtT(it.t0)}.` : `It shows up at ${fmtT(it.t0)}, before ${evName(E.id)} is even detected (${fmtT(ref)}).`, { t: ref, sel: { kind: 'item', id: it.id },
+          fix: { label: 'Start it when the quake is detected', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.t0 = +ref.toFixed(2); } } });
+      }
+    }
+    // the EEW panel stays up through the final report
+    if (it.type === 'eew') {
+      if (it.t1 !== null && last && it.t1 < last.t - 0.05) {
+        const n = E.reports.filter((r) => r.t > it.t1).length;
+        add('warn', `The EEW panel leaves before the last ${n} report${n > 1 ? 's' : ''}`, `It goes away at ${fmtT(it.t1)}, but reports keep coming until ${fmtT(last.t)}.`, { t: it.t1, sel: { kind: 'item', id: it.id },
+          fix: { label: 'Keep it up until the final report', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.t1 = +(last.t + 6).toFixed(2); } } });
+      }
+    }
+    // information boxes can't come before the quake
+    if (['flash', 'epicenter', 'report', 'tsunami', 'longperiod'].includes(it.type)) {
+      const soonest = E.ev.t0 + (E.ph.tDet ?? 2) + 20;
+      if (it.t0 < soonest) {
+        add(it.t0 < E.ev.t0 ? 'error' : 'warn', `${itemTitle(it)} comes ${it.t0 < E.ev.t0 ? 'before the quake happens' : 'too soon'}`,
+          `JMA's information comes a minute or more after the shaking. This one shows at ${fmtT(it.t0)}, ${it.t0 < E.ev.t0 ? r1(E.ev.t0 - it.t0) + ' s before' : r1(it.t0 - E.ev.t0) + ' s after'} ${evName(E.id)} starts.`, { t: it.t0, sel: { kind: 'item', id: it.id }, fix: fixTimes(it) });
+      }
+    }
+    // JMA only sends an intensity flash for 3 or more
+    if (it.type === 'flash' && shIdx(E.ph.maxObs) < 2) {
+      add('warn', 'A flash for a quake that tops out below 3', `JMA only sends 震度速報 for intensity 3 or more. ${evName(E.id)} reaches ${shIdx(E.ph.maxObs) < 0 ? 'less than 1' : shName(shIdx(E.ph.maxObs))}.`, { t: it.t0, sel: { kind: 'item', id: it.id },
+        fix: { label: 'Remove the flash', run: (d) => { d.items = d.items.filter((y) => y.id !== it.id); } } });
+    }
+    // a map takeover set to stay up over a new quake
+    if ((it.type === 'flash' || it.type === 'report') && it.data.giveWay === false) {
+      const s = starts.find((x) => x.E.id !== E.id && x.t > it.t0 && (it.t1 === null || x.t < it.t1));
+      if (s) add('warn', `${itemTitle(it)} hides ${evName(s.E.id)}`, `It covers the map when ${evName(s.E.id)} is detected at ${fmtT(s.t)}, so the new quake can't be seen.`, { t: s.t, sel: { kind: 'item', id: it.id },
+        fix: { label: 'Let it give way', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.data.giveWay = true; } } });
+    }
+    // title cards slide every box away: one over a new quake hides it
+    if (it.type === 'card') {
+      const s = starts.find((x) => x.t > it.t0 && (it.t1 === null || x.t < it.t1));
+      if (s) add('warn', `A title card hides ${evName(s.E.id)}`, `The card is up when ${evName(s.E.id)} is detected at ${fmtT(s.t)}, and it clears every box off the screen.`, { t: s.t, sel: { kind: 'item', id: it.id },
+        fix: { label: 'End the card when the quake hits', run: (d) => { const x = d.items.find((y) => y.id === it.id); if (x) x.t1 = +Math.max(x.t0 + 0.5, s.t - 0.2).toFixed(2); } } });
+    }
+  }
+  // flash, then hypocenter, then intensity report (JMA's order)
+  for (const E of world.evs) {
+    const its = live.filter((it) => evOf(it) === E);
+    const fl = its.find((it) => it.type === 'flash'), rp = its.find((it) => it.type === 'report');
+    if (fl && rp && rp.t0 < fl.t0) add('warn', 'The intensity report comes before the flash', `For ${evName(E.id)}, JMA sends 震度速報 first and the full report after it.`, { t: rp.t0, sel: { kind: 'item', id: rp.id },
+      fix: { label: 'Swap them', run: (d) => { const a = d.items.find((y) => y.id === fl.id), b = d.items.find((y) => y.id === rp.id); if (a && b) { const t = a.t0; a.t0 = b.t0; b.t0 = t; if (a.t1 !== null && a.t1 <= a.t0) a.t1 = +(a.t0 + 20).toFixed(2); } } } });
+    // two of the same box for one quake on screen at once
+    const byType = new Map();
+    for (const it of its) { if (!byType.has(it.type)) byType.set(it.type, []); byType.get(it.type).push(it); }
+    for (const [type, list] of byType) {
+      if (['custom', 'banner', 'card', 'ticker', 'timestamp'].includes(type) || list.length < 2) continue;
+      list.sort((a, b) => a.t0 - b.t0);
+      for (let k = 1; k < list.length; k++) {
+        const a = list[k - 1], b = list[k];
+        const aEnd = a.t1 === null ? Infinity : a.t1;
+        if (b.t0 < aEnd - 0.3) add('warn', `Two ${itemTitle(b)} boxes on screen at once`, `For ${evName(E.id)}, one is still up (until ${aEnd === Infinity ? 'the end' : fmtT(aEnd)}) when the next comes in at ${fmtT(b.t0)}.`, { t: b.t0, sel: { kind: 'item', id: b.id },
+          fix: { label: 'End the first when the second starts', run: (d) => { const x = d.items.find((y) => y.id === a.id); if (x) x.t1 = b.t0; } } });
+      }
+    }
+    // EEW reports
+    const reps = E.reports;
+    const ci = reps.findIndex((r) => r.kind === 'cancel');
+    if (ci >= 0 && ci < reps.length - 1) add('error', `${evName(E.id)} has EEW reports after its cancel`, `A cancel is the last word on an EEW. ${reps.length - ci - 1} report${reps.length - ci - 1 > 1 ? 's come' : ' comes'} after it.`, { t: reps[ci + 1].t, sel: { kind: 'eew', id: reps[ci + 1].id },
+      fix: { label: 'Remove the reports after the cancel', run: (d) => { const drop = new Set(reps.slice(ci + 1).map((r) => r.id)); d.eew = d.eew.filter((r) => !drop.has(r.id)); } } });
+    const fi = reps.findIndex((r) => r.final);
+    if (fi >= 0 && fi < reps.length - 1 && ci < 0) add('warn', `${evName(E.id)} has reports after its final one`, `Report ${fi + 1} is marked final (最終報), but ${reps.length - fi - 1} more come after it.`, { t: reps[fi].t, sel: { kind: 'eew', id: reps[fi].id },
+      fix: { label: 'Make the last report the final one', run: (d) => { for (const r of d.eew) if (r.ev === E.id) r.final = false; const lastR = d.eew.filter((r) => r.ev === E.id).sort((a, b) => a.t - b.t).pop(); if (lastR) lastR.final = true; } } });
+    if (reps[0] && reps[0].t < E.ev.t0 - 15) add('warn', `${evName(E.id)}'s first EEW report is ${r1(E.ev.t0 - reps[0].t)} s before the quake`, 'A report can come a little early when a smaller quake just before sets it off, but not this early.', { t: reps[0].t, sel: { kind: 'eew', id: reps[0].id },
+      fix: { label: 'Regenerate its reports', run: (d) => { const ev = d.events.find((e) => e.id === E.id); if (ev) { ev.eewAuto = true; ev.eewReal = false; refreshAutoEEW(DB, d, ev.id); } } } });
+    const fw = reps.find((r) => r._firstWarn);
+    if (fw) {
+      const p = reportPred(world, E, fw);
+      if (p && p.maxIdx >= 0 && p.maxIdx < 4) add('info', `${evName(E.id)} warns without a 5 Lower forecast`, `JMA only upgrades to a warning when it expects 5 Lower or more somewhere. Report ${fw._n} forecasts ${shName(p.maxIdx)} at most.`, { t: fw.t, sel: { kind: 'eew', id: fw.id },
+        fix: { label: 'Make that report a forecast', run: (d) => { const r = d.eew.find((x) => x.id === fw.id); if (r) r.kind = 'forecast'; } } });
+    }
+  }
+  // the same quake twice
+  for (let i = 0; i < doc.events.length; i++) for (let j = i + 1; j < doc.events.length; j++) {
+    const a = doc.events[i], b = doc.events[j];
+    if (Math.abs(a.t0 - b.t0) < 1 && hav(a.lat, a.lon, b.lat, b.lon) < 10 && Math.abs(a.M - b.M) < 0.3) add('warn', `${evName(a.id)} and ${evName(b.id)} are the same quake twice`, 'Same time, same place, same size. Everything about it shows up doubled.', { t: b.t0, sel: { kind: 'event', id: b.id },
+      fix: { label: `Remove ${evName(b.id).split(' ')[0]}`, run: (d) => { d.events = d.events.filter((e) => e.id !== b.id); d.eew = d.eew.filter((r) => r.ev !== b.id); d.items = d.items.filter((y) => y.ev !== b.id); } } });
+  }
+  // camera
+  if (doc.camera.mode === 'keys' && !doc.camera.keys.length) add('warn', 'Keyframe camera with no keyframes', 'The camera won’t move at all.', { fix: { label: 'Switch to the auto camera', run: (d) => { d.camera.mode = 'auto'; } } });
+  // sounds that aren't on this device
+  const missing = new Set();
+  for (const c of doc.cues) if (!AU.has(c.sound)) missing.add(c.sound);
+  for (const ev of doc.events) for (const v of Object.values(ev.sounds || {})) if (typeof v === 'string' && !AU.has(v)) missing.add(v);
+  if (missing.size) add('warn', `${missing.size} sound${missing.size > 1 ? 's' : ''} missing on this device`, 'This scenario uses sound files that aren’t loaded here, so those moments will be silent. Add them in Settings → Sounds.', { fix: { label: 'Open sound settings', ui: true, run: () => openSettings('sound') } });
+  const rank = { error: 0, warn: 1, info: 2 };
+  return out.sort((a, b) => rank[a.sev] - rank[b.sev] || (a.t ?? 0) - (b.t ?? 0));
+}
+
+// recheck after every change and show the count on the button
+function problemsUpdate() {
+  const b = $('#btnProblems');
+  if (!b) return;
+  if (S.mode !== 'adv' || !S.adv || !S.world) { b.hidden = true; return; }
+  b.hidden = false;
+  try { PROB.list = problemsFor(S.DB, S.adv, S.world); } catch (e) { console.warn('problem check failed', e); PROB.list = []; }
+  const err = PROB.list.filter((p) => p.sev === 'error').length, warn = PROB.list.filter((p) => p.sev === 'warn').length;
+  b.classList.toggle('bad', err > 0);
+  b.classList.toggle('meh', !err && warn > 0);
+  $('#probCount').textContent = PROB.list.length ? String(PROB.list.length) : '✓';
+  b.title = PROB.list.length ? `${err} error${err === 1 ? '' : 's'}, ${warn} warning${warn === 1 ? '' : 's'}, ${PROB.list.length - err - warn} note${PROB.list.length - err - warn === 1 ? '' : 's'}` : 'No problems found';
+  if (!$('#probPop').hidden) problemsOpen(true);
+}
+function problemsFix(list) {
+  const doc = list.filter((p) => p.fix && !p.fix.ui);
+  if (doc.length) edEdit(() => { for (const p of doc) p.fix.run(S.adv); }, { structural: true });
+  for (const p of list) if (p.fix && p.fix.ui) p.fix.run();
+  if (doc.length) toast(doc.length === 1 ? 'Fixed. Undo brings it back.' : `Fixed ${doc.length} problems. Undo brings them back.`, 2600);
+}
+function problemsOpen(keep) {
+  const p = $('#probPop'), b = $('#btnProblems');
+  if (!keep) edCloseMenu();
+  p.textContent = '';
+  const fixable = PROB.list.filter((x) => x.fix && !x.fix.ui);
+  p.append(h('div', { class: 'mh', text: PROB.list.length ? `Problems · ${PROB.list.length}` : 'No problems found' }));
+  if (!PROB.list.length) p.append(h('p', { class: 'note', text: 'Everything is where a real broadcast would put it. This rechecks every time you change something.' }));
+  if (fixable.length > 1) p.append(h('div', { class: 'row' }, btn(`Fix all ${fixable.length}`, () => problemsFix(fixable), 'btn primary sm fixall')));
+  const ul = h('div', { class: 'prob-list' });
+  const SEV = { error: ['Error', '#FF5A64'], warn: ['Warning', '#F2B000'], info: ['Note', '#7FB6FF'] };
+  for (const pr of PROB.list) {
+    const [lab, col] = SEV[pr.sev];
+    const row = h('div', { class: 'prob ' + pr.sev },
+      h('span', { class: 'sev', style: `--c:${col}`, text: lab }),
+      h('div', { class: 'body' },
+        h('span', { class: 'tt', text: pr.title }),
+        h('span', { class: 'dd', text: pr.detail }),
+        pr.fix ? btn(pr.fix.label, (e) => { e.stopPropagation(); problemsFix([pr]); }, 'btn sm fixb') : null));
+    if (pr.t !== undefined) row.title = 'Click to jump to ' + fmtT(pr.t);
+    row.addEventListener('click', () => { if (pr.t !== undefined) seek(clamp(pr.t - 0.5, T_START, S.world.tEnd)); if (pr.sel) edSelect(pr.sel); });
+    ul.append(row);
+  }
+  p.append(ul);
+  p.hidden = false;
+  popPlace(p, b, 'right');
+  b.setAttribute('aria-expanded', 'true');
 }
 
 // ============================================================== Quaker v2 · your stuff on every device
@@ -9551,6 +9802,7 @@ function rebuild(opts = {}) {
   updateTimelineUI();
   updateEasyUI();
   if (S.mode === 'adv') edRender();
+  problemsUpdate();
   loadFontsFor(S.world);
   saveStateSoon();
   needRender = true;
@@ -9564,6 +9816,7 @@ function rebuildWorld() {
   updateTimelineUI();
   saveStateSoon();
   needRender = true;
+  clearTimeout(PROB.timer); PROB.timer = setTimeout(problemsUpdate, 250);
 }
 let rebuildTimer = 0;
 function queueRebuild(opts) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuild(opts), 90); }
@@ -11024,7 +11277,7 @@ async function boot() {
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
     S, R, AU, REC, ED,
-    api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, fitView, setViewPreset,
+    api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
       projSaveNow, projOpen, projStart, projNewBlank, projRename, projDuplicate, projDelete, openPreset, PJ, edResetAll, edSeqOpen, edBuildSequence, edMenuFor: (k) => edTrackMenu(k), edCtx: edContextAt,

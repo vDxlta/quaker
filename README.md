@@ -16,6 +16,8 @@ Earthquake early warning (EEW) simulator and real-quake replay viewer.
 - 64 real quakes from Japan and the US, plus USGS, P2PQuake and JMA feed import with step-by-step instructions
 - Real replays use JMA's actual EEW reports for 15 quakes from 2011 on (from JMA's published record), including PLUM-only reports and Noto 2024's M5.9 that came 13 s before the main shock. Imported JMA or P2PQuake reports bend the station dots to match each town's real reading, and waves travel on JMA2001, the travel-time table JMA itself uses
 - Real ground in Japan: every station and town takes its site amplification from J-SHIS, so soft basins like the Kanto plain, Osaka and Nagoya shake harder and the mountains less
+- A Problems panel on the timeline that catches what a real broadcast wouldn't do (a countdown that comes in late, a flash before its quake, a box covering a new quake, an EEW panel leaving early, reports after a cancel and more), with one-click fixes
+- Flashes and reports give way when another quake is detected, so the new one shows
 - Video export rendered frame by frame (not screen-recorded): a steady frame rate, H.264 + AAC in a plain MP4 that CapCut and TikTok's editor open cleanly, plus frame pictures, share codes and project files
 - Your stuff on every device: settings, projects, sounds and fonts sync automatically through two secret gists on your GitHub account (paste a gist-only token once per device), or through your Claude account in the Claude version, and a backup file moves everything by hand
 - Custom sounds for every alert, a sound per forecast shindo (so the EEW can sound different once it's a warning), and a different sound for each shindo level as the measured shaking climbs
