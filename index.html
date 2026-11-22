@@ -11471,6 +11471,35 @@ async function pickAudioConfig() {
   }
   return null;
 }
+// Safari's AAC encoder hands back a broken decoder description (WebKit bug 302253: fixed in WebKit, not yet in the
+// iOS and macOS releases), and an MP4 built with it has a silent track. We know exactly what we asked the encoder
+// for, so the MP4 gets an AudioSpecificConfig we write ourselves: AAC-LC, the sample rate, the channels.
+const AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+function aacConfig(sr, ch) {
+  const fi = Math.max(0, AAC_RATES.indexOf(sr));
+  return new Uint8Array([(2 << 3) | (fi >> 1), ((fi & 1) << 7) | (ch << 3)]);
+}
+function audioMeta(acfg, meta, first) {
+  if (acfg.mux !== 'aac' || (!first && !(meta && meta.decoderConfig))) return meta;
+  const dc = (meta && meta.decoderConfig) || {};
+  return { ...(meta || {}), decoderConfig: { ...dc, codec: 'mp4a.40.2', sampleRate: acfg.cfg.sampleRate, numberOfChannels: acfg.cfg.numberOfChannels, description: aacConfig(acfg.cfg.sampleRate, acfg.cfg.numberOfChannels) } };
+}
+// the MP4 wants bare AAC frames: if an encoder adds ADTS headers, take them off
+function aacRaw(chunk) {
+  if (chunk.byteLength < 9) return chunk;
+  const b = new Uint8Array(chunk.byteLength);
+  chunk.copyTo(b);
+  if (b[0] !== 0xFF || (b[1] & 0xF6) !== 0xF0) return chunk;
+  const len = ((b[3] & 3) << 11) | (b[4] << 3) | (b[5] >> 5), hl = b[1] & 1 ? 7 : 9;
+  if (len !== b.length || hl >= b.length) return chunk;
+  return new EncodedAudioChunk({ type: chunk.type, timestamp: chunk.timestamp, duration: chunk.duration ?? undefined, data: b.subarray(hl) });
+}
+// why a video came out without sound, for the note under it
+function noSoundWhy(rp) {
+  if (!rp.sound) return 'No sound: “Record with sound” is off in Settings.';
+  if (!S.prefs.sound.on) return 'No sound: sound is turned off in Settings.';
+  return 'No sound: this browser has no Web Audio.';
+}
 // what the video covers: the intro (if it's on), then the whole timeline at the chosen speed
 function exportPlan() {
   const ic = S.doc && S.doc.intro ? normIntro(S.doc.intro) : null;
@@ -11549,7 +11578,7 @@ async function exportVideo() {
   badge('0%');
   const keep = { state: S.state, tau: S.tau, intro: S.intro, staleMs: R.staleMs, K: R.K };
   const plan = exportPlan();
-  let fail = null, blob = null;
+  let fail = null, blob = null, silent = false;
   try {
     // sound first (quick), then the pictures
     const muxer = new Mp4Muxer.Muxer({
@@ -11562,9 +11591,13 @@ async function exportVideo() {
     if (acfg) {
       badge('sound…');
       const buf = await exportAudio(plan, fps, () => {});
-      const ae = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { fail = fail || e; } });
+      let firstA = true;
+      const ae = new AudioEncoder({ output: (c, m) => { const cc = acfg.mux === 'aac' ? aacRaw(c) : c; muxer.addAudioChunk(cc, audioMeta(acfg, m, firstA)); firstA = false; }, error: (e) => { fail = fail || e; } });
       ae.configure(acfg.cfg);
       const c0 = buf.getChannelData(0), c1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : c0, N = 4800;
+      let peak = 0;
+      for (let i = 0; i < c0.length; i += 7) { const v = Math.abs(c0[i]); if (v > peak) peak = v; }
+      silent = peak < 1e-4;
       for (let i = 0; i < buf.length && !fail && !EXP.cancel; i += N) {
         const n = Math.min(N, buf.length - i), data = new Float32Array(n * 2);
         data.set(c0.subarray(i, i + n), 0); data.set(c1.subarray(i, i + n), n);
@@ -11632,7 +11665,8 @@ async function exportVideo() {
   const mb = (blob.size / 1048576).toFixed(1);
   const secs = Math.round(plan.total);
   $('#saveNote').textContent = `MP4 · H.264${acfg ? ' + ' + (acfg.mux === 'aac' ? 'AAC' : 'Opus') : ''} · ${W0}×${H0} · steady ${fps} fps · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · ${mb} MB` +
-    (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '');
+    (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
+    (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
 }
