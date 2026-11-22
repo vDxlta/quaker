@@ -11460,7 +11460,7 @@ boot();
 // clock, and the file is a plain MP4 with H.264 video, AAC audio and its index up front. Players shrug off a
 // recording's uneven timing, but editors like CapCut and TikTok's decode frame by frame and choke on it.
 // Browsers that can't encode (no WebCodecs) fall back to the real-time recorder.
-const EXP = { busy: false, cancel: false, why: '' };
+const EXP = { busy: false, cancel: false, why: '', stats: null };
 // a yield that background tabs don't throttle the way they throttle timers
 const yieldNow = () => new Promise((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
@@ -11587,7 +11587,7 @@ async function exportVideo() {
   }
   closeAllDialogs();
   discardRecording();
-  EXP.busy = true; EXP.cancel = false; EXP.why = '';
+  EXP.busy = true; EXP.cancel = false; EXP.why = ''; EXP.stats = null;
   S.recording = true; S.exporting = true;
   document.body.classList.add('recording');
   for (const b of [$('#btnRecord'), $('#btnRecord2')]) { b.classList.add('on'); b.querySelector('span').textContent = 'Stop rendering'; }
@@ -11639,19 +11639,28 @@ async function exportVideo() {
     ve.configure(vcfg);
     const n = Math.max(1, Math.round(plan.total * fps)), gop = fps * 2;
     let shown = -1;
+    // where the time goes, per frame: drawing, grabbing the canvas into a frame, waiting on the encoder
+    const st = { draw: 0, grab: 0, wait: 0, t0: performance.now() };
     for (let i = 0; i < n && !fail && !EXP.cancel; i++) {
+      const a = performance.now();
       exportStateAt(plan, i / fps);
       doRender();
+      const b = performance.now();
       const vf = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
       ve.encode(vf, { keyFrame: i % gop === 0 });
       vf.close();
+      const c = performance.now();
       while (ve.encodeQueueSize > 4 && !fail) await yieldNow();
+      st.draw += b - a; st.grab += c - b; st.wait += performance.now() - c;
       const pct = Math.floor((i / n) * 100);
       if (pct !== shown) { shown = pct; badge(pct + '%'); }
       if (i % 2 === 0) await yieldNow();
     }
     await ve.flush();
     ve.close();
+    const secs = (performance.now() - st.t0) / 1000;
+    EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / n, grab: st.grab / n, wait: st.wait / n, secs };
+    console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
       blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
@@ -11685,7 +11694,8 @@ async function exportVideo() {
   const secs = Math.round(plan.total);
   $('#saveNote').textContent = `MP4 · H.264${acfg ? ' + ' + (acfg.mux === 'aac' ? 'AAC' : 'Opus') : ''} · ${W0}×${H0} · steady ${fps} fps · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · ${mb} MB` +
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
-    (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '');
+    (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
+    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'}): drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms, encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
 }
