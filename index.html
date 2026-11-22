@@ -11443,7 +11443,7 @@ async function boot() {
   needRender = true;
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
-    S, R, AU, REC, ED,
+    S, R, AU, REC, ED, EXP,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, scene: (t) => sceneAt(S.world, t ?? S.tau, S.prefs), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
@@ -11460,7 +11460,7 @@ boot();
 // clock, and the file is a plain MP4 with H.264 video, AAC audio and its index up front. Players shrug off a
 // recording's uneven timing, but editors like CapCut and TikTok's decode frame by frame and choke on it.
 // Browsers that can't encode (no WebCodecs) fall back to the real-time recorder.
-const EXP = { busy: false, cancel: false, why: '', stats: null };
+const EXP = { busy: false, cancel: false, why: '', stats: null, force: null };
 // a yield that background tabs don't throttle the way they throttle timers
 const yieldNow = () => new Promise((r) => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
@@ -11639,27 +11639,75 @@ async function exportVideo() {
     ve.configure(vcfg);
     const n = Math.max(1, Math.round(plan.total * fps)), gop = fps * 2;
     let shown = -1;
-    // where the time goes, per frame: drawing, grabbing the canvas into a frame, waiting on the encoder
+    // Two ways to get the canvas into the encoder. 'direct' makes a VideoFrame from the canvas, and the page waits
+    // right there while the browser finishes drawing it and copies it out (Safari draws canvases in a separate GPU
+    // process, so that wait is most of the time on an iPad). 'bitmap' asks for an ImageBitmap snapshot, which
+    // the browser makes in the background, and draws the next frame meanwhile; it encodes each snapshot one frame
+    // later. A stretch of the first map frames (not the intro, which is too light to tell) tries both, and the
+    // rest go with whichever is faster on this device.
+    const canBitmap = typeof createImageBitmap === 'function';
+    let mode = EXP.force || (canBitmap ? 'try' : 'direct');
+    const TRY = 12, T0 = Math.min(Math.ceil((plan.introDur + 0.2) * fps), Math.max(0, n - 2 * TRY)), trial = { direct: 0, bitmap: 0 };
+    let pending = null;
+    const ts = (k) => Math.round((k * 1e6) / fps), fdur = Math.round(1e6 / fps);
+    const encodeDirect = (k) => { const vf = new VideoFrame(canvas, { timestamp: ts(k), duration: fdur }); ve.encode(vf, { keyFrame: k % gop === 0 }); vf.close(); };
+    // encode the snapshot waiting from the frame before; false if this browser can't do it after all
+    const flushPending = async () => {
+      if (!pending) return true;
+      const pd = pending; pending = null;
+      let bm = null;
+      try {
+        bm = await pd.p;
+        const vf = new VideoFrame(bm, { timestamp: ts(pd.k), duration: fdur });
+        ve.encode(vf, { keyFrame: pd.k % gop === 0 }); vf.close(); bm.close();
+        return true;
+      } catch (e) {
+        if (bm) bm.close();
+        // draw that frame again and send it the direct way
+        exportStateAt(plan, pd.k / fps); doRender(); encodeDirect(pd.k);
+        return false;
+      }
+    };
     const st = { draw: 0, grab: 0, wait: 0, t0: performance.now() };
+    let lastYield = performance.now();
     for (let i = 0; i < n && !fail && !EXP.cancel; i++) {
+      const how = mode === 'try' ? (i < T0 + TRY ? 'direct' : 'bitmap') : mode;
       const a = performance.now();
       exportStateAt(plan, i / fps);
       doRender();
       const b = performance.now();
-      const vf = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
-      ve.encode(vf, { keyFrame: i % gop === 0 });
-      vf.close();
+      if (how === 'bitmap') {
+        const p = createImageBitmap(canvas);
+        if (!(await flushPending())) { mode = 'direct'; p.then((x) => x.close(), () => {}); exportStateAt(plan, i / fps); doRender(); encodeDirect(i); }
+        else pending = { p, k: i };
+      } else {
+        if (pending) await flushPending();
+        encodeDirect(i);
+      }
       const c = performance.now();
       while (ve.encodeQueueSize > 4 && !fail) await yieldNow();
-      st.draw += b - a; st.grab += c - b; st.wait += performance.now() - c;
+      const e = performance.now();
+      st.draw += b - a; st.grab += c - b; st.wait += e - c;
+      // the trial: skip the first two of each (warming up), then time whole frames
+      if (mode === 'try') {
+        if ((i >= T0 + 2 && i < T0 + TRY) || i >= T0 + TRY + 2) trial[how] += e - a;
+        if (i === T0 + 2 * TRY - 1) {
+          mode = trial.bitmap / (TRY - 2) < (trial.direct / (TRY - 2)) * 0.95 ? 'bitmap' : 'direct';
+          console.info('export capture', mode, JSON.stringify({ direct: trial.direct / (TRY - 2), bitmap: trial.bitmap / (TRY - 2) }));
+        }
+      }
       const pct = Math.floor((i / n) * 100);
       if (pct !== shown) { shown = pct; badge(pct + '%'); }
-      if (i % 2 === 0) await yieldNow();
+      // let the page breathe (progress, the Stop button) a few times a second, not every frame: each break lets
+      // the browser repaint the big canvas, which costs as much as drawing it
+      if (e - lastYield > 120) { await yieldNow(); lastYield = performance.now(); }
     }
+    if (!fail && !EXP.cancel) await flushPending();
+    else if (pending) { pending.p.then((x) => x.close(), () => {}); pending = null; }
     await ve.flush();
     ve.close();
     const secs = (performance.now() - st.t0) / 1000;
-    EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / n, grab: st.grab / n, wait: st.wait / n, secs };
+    EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / n, grab: st.grab / n, wait: st.wait / n, secs, mode: mode === 'try' ? 'direct' : mode };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
@@ -11695,7 +11743,7 @@ async function exportVideo() {
   $('#saveNote').textContent = `MP4 · H.264${acfg ? ' + ' + (acfg.mux === 'aac' ? 'AAC' : 'Opus') : ''} · ${W0}×${H0} · steady ${fps} fps · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · ${mb} MB` +
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
-    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'}): drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms, encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '');
+    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'}): drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
 }
