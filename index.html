@@ -5646,12 +5646,12 @@ function renderFrame(F) {
   const liveA = reveal ? 1 : scene.map.live;
   const liveGone = liveClip && liveClip.r >= liveClip.R0 - 1;
   computeEventField(env, prefs.map.tick !== false);
+  const srcs = F.idle ? [] : waveSources(env);
   if (liveA > 0.01 && !liveGone) {
     c.save();
     if (liveClip && reveal) {
       c.beginPath(); c.rect(-10, -10, W + 20, H + 20); c.arc(liveClip.x, liveClip.y, Math.max(0, liveClip.r), 0, 6.2832, true); c.clip('evenodd');
     }
-    const srcs = F.idle ? [] : waveSources(env);
     drawWaves(c, srcs, vs, liveA, true);
     drawPre(c, env, vs, liveA, 'fill');
     if (prefs.map.stations !== false) drawStations(c, env, vs, liveA);
@@ -5671,6 +5671,24 @@ function renderFrame(F) {
       }
     }
     c.restore();
+  }
+  // the waves keep going under the flash and report, faded (Settings: "Waves under info screens"), with the
+  // epicenter marks so you can still tell where they come from
+  const ghost = F.idle ? 0 : clamp(+(prefs.map.ghost ?? 0.35), 0, 1);
+  if (ghost > 0.01 && liveClip && srcs.length) {
+    const gA = reveal ? ghost : ghost * (1 - liveA);
+    if (gA > 0.01) {
+      c.save();
+      if (reveal && !liveGone) { c.beginPath(); c.arc(liveClip.x, liveClip.y, Math.max(0, liveClip.r), 0, 6.2832); c.clip(); }
+      drawWaves(c, srcs, vs, gA, true);
+      drawWaves(c, srcs, vs, gA, false);
+      for (const ee of scene.events) {
+        if (!ee.rep || ee.rep.kind === 'cancel' || ee.rep.assumed || !ee.E.ph.shaking) continue;
+        const p = lonLatToScreen(ee.rep.lon, ee.rep.lat, vs);
+        drawX(c, p.x, p.y, gA);
+      }
+      c.restore();
+    }
   }
   // reveal ring
   if (liveClip && reveal && !liveGone && liveClip.r > 2) {
@@ -9557,7 +9575,7 @@ const PREFS_DEFAULT = {
   v: 2,
   anim: { preset: 'glide', in: 'slide', out: 'slide', dur: 0.6, ease: 'swiftOut', roll: true },
   reducedMode: 'auto',
-  map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1, preBox: true, preEst: true, logo: true },
+  map: { style: 'midnight', labels: true, fills: true, tick: true, truth: false, legend: true, clock: true, stations: true, stationSize: 1, preBox: true, preEst: true, logo: true, ghost: 0.35 },
   fx: { shake: 0.6, vignette: true, reveal: true, shadows: true },
   clock: { h12: false },
   sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'issue', fcMix: 'replace', fcV: 2 },
@@ -11033,6 +11051,7 @@ function buildSettings() {
       cChk(() => P.map.tick, prefSet(P.map, 'tick'), 'Update stations once per second', 'Like the K-NET realtime monitor. Off = smooth.'),
       cChk(() => P.map.stations, prefSet(P.map, 'stations'), 'Show station dots'),
       cChk(() => P.map.fills, prefSet(P.map, 'fills'), 'Shade forecast intensity during warnings'),
+      fRow('Waves under info screens', cRange(() => P.map.ghost ?? 0.35, prefSet(P.map, 'ghost'), { min: 0, max: 0.8, step: 0.05, fmt: (v) => (v < 0.01 ? 'Off' : Math.round(v * 100) + '%') }), 'The P and S waves keep going, faded, while the intensity flash or report covers the map. Off hides them like before.'),
       cChk(() => P.map.labels, prefSet(P.map, 'labels'), 'City and region labels'),
       cChk(() => P.map.preBox, prefSet(P.map, 'preBox'), 'Detection box before the EEW', 'A light green box around the stations that have felt it: the rawest guess at where it is. It hands off to the circles once they’re ready.'),
       cChk(() => P.map.logo !== false, prefSet(P.map, 'logo'), 'Quaker logo on the video', 'Bottom right, next to the drill notice. It shows up in recordings and saved frames too.'),
