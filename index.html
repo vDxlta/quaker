@@ -12336,10 +12336,10 @@ function avcCodecs(w, h, fps) {
   const lv = (L.find(([, m, f]) => mbps <= m && fs <= f) || L[L.length - 1])[0].toString(16).padStart(2, '0');
   return ['6400', '4d00', '42e0'].map((p) => `avc1.${p}${lv}`);
 }
-async function pickVideoConfig(w, h, fps, bitrate) {
+async function pickVideoConfig(w, h, fps, bitrate, only) {
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') return null;
   // the graphics card's encoder in any profile first, then whatever the browser has
-  for (const hw of ['prefer-hardware', 'no-preference']) {
+  for (const hw of only ? [only] : ['prefer-hardware', 'no-preference']) {
     for (const codec of avcCodecs(w, h, fps)) {
       const cfg = { codec, width: w, height: h, bitrate, framerate: fps, avc: { format: 'avc' }, hardwareAcceleration: hw };
       try { const s = await VideoEncoder.isConfigSupported(cfg); if (s && s.supported) return cfg; } catch (e) { /* next */ }
@@ -12442,6 +12442,8 @@ async function exportVideo() {
   const W0 = Math.round((rp.res * 16) / 9 / 2) * 2, H0 = rp.res, fps = rp.fps;
   const bitrate = Math.round((rp.res >= 1440 ? 20e6 : rp.res >= 1080 ? 12e6 : 6e6) * (fps >= 60 ? 1.5 : 1));
   const vcfg = await pickVideoConfig(W0, H0, fps, bitrate);
+  // the graphics card's encoder is one chip however many encoders use it; software ones spread across cores
+  const swcfg = vcfg && (vcfg.hardwareAcceleration === 'prefer-hardware' || EXP.raceSw) ? await pickVideoConfig(W0, H0, fps, bitrate, 'prefer-software') : null;
   const wantSound = rp.sound && S.prefs.sound.on && AU.ensure();
   const acfg = wantSound ? await pickAudioConfig() : null;
   // can't render it here: record it in real time like before
@@ -12515,7 +12517,7 @@ async function exportVideo() {
     EXP.reconfig = false;
     const keyOf = (d) => (d ? Array.from(new Uint8Array(d.buffer || d, d.byteOffset || 0, d.byteLength)).join(',') : '');
     // the page's own encoder, made only if the page ends up drawing (the render workers have their own)
-    let ve = null, pageStarted = false;
+    let ve = null, pageStarted = false, pageCfg = vcfg;
     const pageEnc = () => {
       if (ve) return ve;
       ve = new VideoEncoder({ output: (c, m) => {
@@ -12525,7 +12527,7 @@ async function exportVideo() {
         }
         muxer.addVideoChunk(c, m);
       }, error: (e) => { fail = fail || e; } });
-      ve.configure(vcfg);
+      ve.configure(pageCfg);
       return ve;
     };
     const n = Math.max(1, Math.round(plan.total * fps)), gop = fps * 2;
@@ -12705,7 +12707,7 @@ async function exportVideo() {
     });
     // test stretches for the race: drawn, encoded, waited for to the last frame, and thrown away. A worker that
     // breaks is noted; `keep` frame comes back as a picture to check against the page's
-    const poolJob = (jobs) => new Promise((ok) => {
+    const poolJob = (ws, jobs) => new Promise((ok) => {
       let left = jobs.length, kept = null, settled = false;
       const bad = [], seen = new Set();
       const fin = () => {
@@ -12714,12 +12716,12 @@ async function exportVideo() {
         pool.onFrame = null; pool.onDone = null; pool.onError = null;
         ok({ ok: !bad.length, kept, bad });
       };
-      const t = setTimeout(() => { poolErr = poolErr || 'a render worker took too long'; for (const wk of pool.workers) if (!seen.has(wk)) bad.push(wk); fin(); }, 30000);
+      const t = setTimeout(() => { poolErr = poolErr || 'a render worker took too long'; for (const wk of ws) if (!seen.has(wk)) bad.push(wk); fin(); }, 30000);
       const one = (wk) => { if (seen.has(wk)) return; seen.add(wk); if (--left <= 0) fin(); };
       pool.onFrame = (k, bm) => { if (!kept) kept = bm; else bm.close(); };
       pool.onDone = (wk) => one(wk);
       pool.onError = (wk, msg) => { poolErr = poolErr || msg; if (!bad.includes(wk)) bad.push(wk); one(wk); };
-      jobs.forEach((jb, j) => pool.workers[j].w.postMessage({ type: 'render', test: true, keep: -1, ...jb }));
+      jobs.forEach((jb, j) => ws[j].w.postMessage({ type: 'render', test: true, keep: -1, ...jb }));
     });
     const small = (src) => { const c = new OffscreenCanvas(96, 54), x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 96, 54); return x.getImageData(0, 0, 96, 54).data; };
     let usePool = false, poolDiff = null;
@@ -12749,43 +12751,57 @@ async function exportVideo() {
       race.page = pageMs;
       if (pool && !EXP.cancel) {
         const introN = Math.ceil(plan.introDur * fps);
-        const tryPool = async () => {
+        let firstTry = true;
+        // one setup: the workers drawing on the CPU or the GPU, with the graphics card's encoder or software ones.
+        // A worker that can't do this setup (its encoder won't start, say) sits it out
+        const tryPool = async (name, gpu, cfg) => {
+          if (!(await poolPrep(pool, gpu, cfg))) return { ms: Infinity, diff: null };
           // warm up on each kind of frame the video has (the intro, its reveal, the map), which builds each worker's
-          // layers and starts its encoder; a worker whose encoder won't start is left out
-          for (const k of [...new Set([0, Math.floor(introN * 0.6), introN, P0].map((x) => clamp(x, 0, n - 1)))]) {
-            const r = await poolJob(pool.workers.map(() => ({ from: k, to: k + 1 })));
+          // layers and starts its encoder
+          const warm = firstTry ? [0, Math.floor(introN * 0.6), introN, P0] : [0, P0];
+          firstTry = false;
+          for (const k of [...new Set(warm.map((x) => clamp(x, 0, n - 1)))]) {
+            const ws = pool.workers.filter((wk) => !wk.bad[name]);
+            if (ws.length < 2 || EXP.cancel) return { ms: Infinity, diff: null };
+            const r = await poolJob(ws, ws.map(() => ({ from: k, to: k + 1 })));
             if (r.kept) r.kept.close();
-            for (const wk of r.bad) poolDrop(pool, wk);
-            if (pool.n < 2 || EXP.cancel) return { ms: Infinity, diff: null };
+            for (const wk of r.bad) wk.bad[name] = true;
           }
+          const ws = pool.workers.filter((wk) => !wk.bad[name]);
+          if (ws.length < 2 || EXP.cancel) return { ms: Infinity, diff: null };
           // the race: a run of frames each, all at once
-          const per = clamp(Math.floor(n / (pool.n * 2)), 4, 12);
+          const per = clamp(Math.floor(n / (ws.length * 2)), 4, 12);
           const w0 = performance.now();
-          const r = await poolJob(pool.workers.map((wk, j) => ({ from: Math.min(P0 + j * per, n - per), to: Math.min(P0 + j * per, n - per) + per, keep: j === 0 ? P0 : -1 })));
-          const ms = (performance.now() - w0) / (per * pool.n);
+          const r = await poolJob(ws, ws.map((wk, j) => ({ from: Math.min(P0 + j * per, n - per), to: Math.min(P0 + j * per, n - per) + per, keep: j === 0 ? P0 : -1 })));
+          const ms = (performance.now() - w0) / (per * ws.length);
           let diff = null;
           if (r.kept) {
-            const ws = small(r.kept), N = ws.length / 4;
+            const px = small(r.kept), N = px.length / 4;
             let d = 0;
-            for (let j = 0; j < ws.length; j += 4) d += Math.abs(ws[j] - pageSample[j]) + Math.abs(ws[j + 1] - pageSample[j + 1]) + Math.abs(ws[j + 2] - pageSample[j + 2]);
+            for (let j = 0; j < px.length; j += 4) d += Math.abs(px[j] - pageSample[j]) + Math.abs(px[j + 1] - pageSample[j + 1]) + Math.abs(px[j + 2] - pageSample[j + 2]);
             diff = pageSample ? d / (N * 3) : null;
             r.kept.close();
           }
-          for (const wk of r.bad) poolDrop(pool, wk);
-          return r.ok && diff !== null && diff < 10 ? { ms, diff } : { ms: Infinity, diff };
+          for (const wk of r.bad) wk.bad[name] = true;
+          return r.ok && diff !== null && diff < 10 ? { ms, diff, name, gpu, cfg, n: ws.length } : { ms: Infinity, diff };
         };
-        const cpu = await tryPool();
-        race.cpu = cpu.ms; poolDiff = cpu.diff;
-        let gpu = { ms: Infinity, diff: null };
-        if (EXP.force !== 'workers-cpu' && pool.n >= 2 && !EXP.cancel && (await poolPrep(pool, true))) { gpu = await tryPool(); race.gpu = gpu.ms; }
-        const cpuMs = EXP.force === 'workers-gpu' ? Infinity : cpu.ms, gpuMs = EXP.force === 'workers-cpu' ? Infinity : gpu.ms;
-        const best = Math.min(cpuMs, gpuMs);
-        usePool = pool.n >= 2 && isFinite(best) && (/^workers/.test(EXP.force || '') || best < pageMs * 0.9);
-        // a fresh encoder in each for the real thing, drawing wherever won
-        if (usePool && !(await poolPrep(pool, gpuMs < cpuMs))) usePool = false;
-        if (usePool) poolDiff = pool.gpu ? gpu.diff : cpu.diff;
+        for (const wk of pool.workers) wk.bad = {};
+        const tries = [];
+        const force = EXP.force || '';
+        // software encoders first: nothing shared, so no worker sits it out for lack of a hardware session
+        if (swcfg && force !== 'workers-gpu' && force !== 'workers-hw') { const x = await tryPool('sw', false, swcfg); race.sw = x.ms; tries.push(x); if (x.diff !== null) poolDiff = x.diff; }
+        if (force !== 'workers-gpu' && force !== 'workers-sw' && !EXP.cancel) { const x = await tryPool('cpu', false, vcfg); race.cpu = x.ms; tries.push(x); if (x.diff !== null) poolDiff = x.diff; }
+        if (force !== 'workers-cpu' && force !== 'workers-sw' && !EXP.cancel) { const x = await tryPool('gpu', true, vcfg); race.gpu = x.ms; tries.push(x); if (x.diff !== null && poolDiff === null) poolDiff = x.diff; }
+        const win = tries.filter((x) => isFinite(x.ms)).sort((p, q) => p.ms - q.ms)[0] || null;
+        usePool = !!win && !EXP.cancel && (/^workers/.test(force) || win.ms < pageMs * 0.9);
+        // the workers that can do the winning setup, with a fresh encoder each
+        if (usePool) {
+          for (const wk of [...pool.workers]) if (wk.bad[win.name]) poolDrop(pool, wk);
+          if (pool.n < 2 || !(await poolPrep(pool, win.gpu, win.cfg))) usePool = false;
+        }
+        if (usePool) { poolDiff = win.diff; pageCfg = win.cfg; race.win = win.name; }
         const off = (x) => x.diff !== null && x.diff >= 10;
-        poolWhy = usePool ? '' : isFinite(best) ? 'slower' : off(cpu) || off(gpu) ? 'mismatch' : 'error';
+        poolWhy = usePool ? '' : win ? 'slower' : tries.some(off) ? 'mismatch' : 'error';
         console.info('export workers', JSON.stringify({ workers: pool.n, race, use: usePool, gpu: pool.gpu, err: poolErr }));
       } else { poolWhy = 'start'; poolErr = poolErr || POOL.why || ''; }
     }
@@ -12804,7 +12820,7 @@ async function exportVideo() {
     const secs = (performance.now() - st.t0) / 1000, sn = Math.max(1, st.n);
     EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / sn, grab: st.grab / sn, wait: st.wait / sn, secs, mode: mode === 'try' ? 'direct' : mode,
       workers: poolFrames ? poolN : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolErr, poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
-      cores: navigator.hardwareConcurrency || 0, hw: vcfg.hardwareAcceleration === 'prefer-hardware' };
+      cores: navigator.hardwareConcurrency || 0, hw: pageCfg.hardwareAcceleration === 'prefer-hardware', sw: !!poolFrames && race.win === 'sw', cardHw: vcfg.hardwareAcceleration === 'prefer-hardware', swOffered: !!swcfg };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
@@ -12851,9 +12867,11 @@ function exportSpeedNote(x) {
   const short = (m) => String(m || '').replace(/\s+/g, ' ').slice(0, 140);
   let t = ` · Rendered at ${x.fps.toFixed(0)} frames/s (${x.x >= 1 ? x.x.toFixed(1) + '× real time' : (1 / x.x).toFixed(1) + '× slower than real time'})`;
   if (x.workers) t += ` by ${x.workers} render workers drawing on the ${x.gpu ? 'GPU' : 'CPU'} and encoding side by side (${Math.round(x.poolShare * 100)}% of the frames)`;
-  t += x.hw ? ' · encoder: the graphics card’s' : ' · encoder: the browser’s own (no hardware H.264 found)';
+  t += x.sw ? ' · encoder: software, one per worker' + (x.cardHw ? ' (faster than the graphics card’s here)' : '')
+    : x.hw ? ' · encoder: the graphics card’s' + (x.swOffered ? '' : ' (no software H.264 encoder here to race it)') : ' · encoder: the browser’s own (no hardware H.264 found)';
   if (x.race && x.race.page !== undefined) {
     t += ` · speed test, drawn and encoded, ms a frame: page ${f1(x.race.page)}`;
+    if (x.race.sw !== undefined) t += `, CPU workers with software encoders ${f1(x.race.sw)}`;
     if (x.race.cpu !== undefined) t += `, CPU workers ${f1(x.race.cpu)}`;
     if (x.race.gpu !== undefined) t += `, GPU workers ${f1(x.race.gpu)}`;
     t += ` (${x.cores} cores)`;
@@ -12922,6 +12940,8 @@ function workerMain() {
           initRenderer(new OffscreenCanvas(size.W0, size.H0), gpu ? undefined : { willReadFrequently: true });
           R.K = size.K; R.staleMs = 0; INTRO.key = ''; INTRO.bg = null; INTRO.tmp = null; CARD.tmp = null;
         }
+        // another kind of encoder (the graphics card's or software): a new one; the same kind: start it afresh
+        if (m.vcfg && JSON.stringify(m.vcfg) !== JSON.stringify(vcfg)) { vcfg = m.vcfg; if (enc && enc.state !== 'closed') enc.close(); enc = null; }
         if (enc && enc.state !== 'closed') { enc.reset(); enc.configure(vcfg); } else enc = null;
         post({ type: 'prepok' });
       } else if (m.type === 'render') {
@@ -13024,8 +13044,8 @@ async function startPool(o) {
   }
   // each worker holds its own copy of the map data and canvases (100 to 200 MB), so phones and tablets get fewer
   const mobile = /iPhone|iPad|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
-  let n = clamp((navigator.hardwareConcurrency || 4) - 1, 2, mobile ? 3 : 6);
-  if (navigator.deviceMemory) n = Math.min(n, Math.max(2, Math.floor(navigator.deviceMemory)));
+  let n = clamp((navigator.hardwareConcurrency || 4) - 2, 2, mobile ? 3 : 8);
+  if (navigator.deviceMemory) n = Math.min(n, Math.max(2, Math.floor(navigator.deviceMemory * 1.5)));
   const msg = poolInitMsg(o);
   const pool = { workers: [], all: [], onFrame: null, onDone: null, onError: null, onAck: null, onChunk: null, onFlushed: null, dead: false, n, gpu: false, why: '' };
   const ready = [];
@@ -13072,12 +13092,12 @@ function poolDrop(pool, wk) {
   pool.n = pool.workers.length;
 }
 // every worker drawing on the GPU or on its own core, with a fresh encoder
-function poolPrep(pool, gpu) {
+function poolPrep(pool, gpu, vcfg) {
   return new Promise((ok) => {
     let left = pool.workers.length;
     const t = setTimeout(() => ok(false), 10000);
     pool.onAck = () => { if (--left <= 0) { clearTimeout(t); pool.gpu = gpu; ok(true); } };
-    for (const wk of pool.workers) wk.w.postMessage({ type: 'prep', gpu });
+    for (const wk of pool.workers) wk.w.postMessage({ type: 'prep', gpu, vcfg });
   });
 }
 
