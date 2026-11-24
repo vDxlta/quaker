@@ -6946,7 +6946,8 @@ function voicePrefetch(lines, prefs) {
 let voicePfTimer = 0;
 function voicePrefetchSoon(lines, prefs) {
   clearTimeout(voicePfTimer);
-  if (!lines || !lines.length) return;
+  // a render worker only draws: the page fetches and mixes the voice
+  if (!lines || !lines.length || typeof document === 'undefined') return;
   voicePfTimer = setTimeout(() => voicePrefetch(lines, prefs), 1200);
 }
 // everything a video needs, before its sound is mixed; returns how many lines couldn't be fetched
@@ -6996,6 +6997,7 @@ function voiceDevice(line, V) {
 let voiceStatusTimer = 0;
 function voiceStatusChanged() {
   clearTimeout(voiceStatusTimer);
+  if (typeof document === 'undefined') return;
   voiceStatusTimer = setTimeout(() => { const el = document.getElementById('voiceStatus'); if (el) el.textContent = voiceStatusText(); }, 150);
 }
 function voiceStatusText() {
@@ -12336,8 +12338,9 @@ function avcCodecs(w, h, fps) {
 }
 async function pickVideoConfig(w, h, fps, bitrate) {
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') return null;
-  for (const codec of avcCodecs(w, h, fps)) {
-    for (const hw of ['prefer-hardware', 'no-preference']) {
+  // the graphics card's encoder in any profile first, then whatever the browser has
+  for (const hw of ['prefer-hardware', 'no-preference']) {
+    for (const codec of avcCodecs(w, h, fps)) {
       const cfg = { codec, width: w, height: h, bitrate, framerate: fps, avc: { format: 'avc' }, hardwareAcceleration: hw };
       try { const s = await VideoEncoder.isConfigSupported(cfg); if (s && s.supported) return cfg; } catch (e) { /* next */ }
     }
@@ -12510,14 +12513,21 @@ async function exportVideo() {
     // note it if it happens
     let cfgKey = null;
     EXP.reconfig = false;
-    const ve = new VideoEncoder({ output: (c, m) => {
-      if (m && m.decoderConfig) {
-        const d = m.decoderConfig.description, k = d ? Array.from(new Uint8Array(d.buffer || d, d.byteOffset || 0, d.byteLength)).join(',') : m.decoderConfig.codec;
-        if (cfgKey === null) cfgKey = k; else if (k !== cfgKey) EXP.reconfig = true;
-      }
-      muxer.addVideoChunk(c, m);
-    }, error: (e) => { fail = fail || e; } });
-    ve.configure(vcfg);
+    const keyOf = (d) => (d ? Array.from(new Uint8Array(d.buffer || d, d.byteOffset || 0, d.byteLength)).join(',') : '');
+    // the page's own encoder, made only if the page ends up drawing (the render workers have their own)
+    let ve = null, pageStarted = false;
+    const pageEnc = () => {
+      if (ve) return ve;
+      ve = new VideoEncoder({ output: (c, m) => {
+        if (m && m.decoderConfig) {
+          const k = keyOf(m.decoderConfig.description) || m.decoderConfig.codec;
+          if (cfgKey === null) cfgKey = k; else if (k !== cfgKey) EXP.reconfig = true;
+        }
+        muxer.addVideoChunk(c, m);
+      }, error: (e) => { fail = fail || e; } });
+      ve.configure(vcfg);
+      return ve;
+    };
     const n = Math.max(1, Math.round(plan.total * fps)), gop = fps * 2;
     let shown = -1;
     // Two ways to get the canvas into the encoder. 'direct' makes a VideoFrame from the canvas, and the page waits
@@ -12531,7 +12541,9 @@ async function exportVideo() {
     const TRY = 12, T0 = Math.min(Math.ceil((plan.introDur + 0.2) * fps), Math.max(0, n - 2 * TRY)), trial = { direct: 0, bitmap: 0 };
     let pending = null;
     const ts = (k) => Math.round((k * 1e6) / fps), fdur = Math.round(1e6 / fps);
-    const encodeDirect = (k) => { const vf = new VideoFrame(canvas, { timestamp: ts(k), duration: fdur }); ve.encode(vf, { keyFrame: k % gop === 0 }); vf.close(); };
+    // the first frame the page's encoder gets is a keyframe, wherever it starts
+    const encPage = (vf, k) => { pageEnc().encode(vf, { keyFrame: k % gop === 0 || !pageStarted }); pageStarted = true; };
+    const encodeDirect = (k) => { const vf = new VideoFrame(canvas, { timestamp: ts(k), duration: fdur }); encPage(vf, k); vf.close(); };
     // encode the snapshot waiting from the frame before; false if this browser can't do it after all
     const flushPending = async () => {
       if (!pending) return true;
@@ -12540,7 +12552,7 @@ async function exportVideo() {
       try {
         bm = await pd.p;
         const vf = new VideoFrame(bm, { timestamp: ts(pd.k), duration: fdur });
-        ve.encode(vf, { keyFrame: pd.k % gop === 0 }); vf.close(); bm.close();
+        encPage(vf, pd.k); vf.close(); bm.close();
         return true;
       } catch (e) {
         if (bm) bm.close();
@@ -12551,8 +12563,8 @@ async function exportVideo() {
     };
     const st = { draw: 0, grab: 0, wait: 0, n: 0, t0: performance.now() };
     let lastYield = performance.now();
-    // drawing on this page, frame by frame, from `from` until `stop(i)` says to hand over (or the end)
-    const singleRun = async (from, stop) => {
+    // drawing on this page, frame by frame, from `from` to the end
+    const singleRun = async (from) => {
       for (let i = from; i < n && !fail && !EXP.cancel; i++) {
         const how = mode === 'try' ? (i < T0 + TRY ? 'direct' : 'bitmap') : mode;
         const a = performance.now();
@@ -12568,7 +12580,8 @@ async function exportVideo() {
           encodeDirect(i);
         }
         const c = performance.now();
-        while (ve.encodeQueueSize > 4 && !fail) await yieldNow();
+        // a hardware encoder takes a few frames to hand each one back, so it gets several at once
+        while (pageEnc().encodeQueueSize > 8 && !fail) await yieldNow();
         const e = performance.now();
         st.draw += b - a; st.grab += c - b; st.wait += e - c; st.n++;
         // the trial: skip the first two of each (warming up), then time whole frames
@@ -12584,65 +12597,129 @@ async function exportVideo() {
         // let the page breathe (progress, the Stop button) a few times a second, not every frame: each break lets
         // the browser repaint the big canvas, which costs as much as drawing it
         if (e - lastYield > 120) { await yieldNow(); lastYield = performance.now(); }
-        if (stop && stop(i)) { if (!(await flushPending())) mode = 'direct'; return i + 1; }
       }
       if (!fail && !EXP.cancel) await flushPending();
       else if (pending) { pending.p.then((x) => x.close(), () => {}); pending = null; }
       return n;
     };
-    // the render workers. Every frame of a video comes from one place (the page or the workers): mixing the two
-    // can make a hardware encoder switch its stream settings partway, and players freeze there.
-    let pool = null, poolFrames = 0, poolWhy = '';
-    const poolP = EXP.force !== 'single' && poolSupported(EXP.force === 'workers') && n > fps * 4 ? startPool({ W0, H0, fps, plan }).catch(() => null) : null;
-    const poolRun = (from) => new Promise((resolve) => {
-      const B = 4, ahead = clamp(Math.floor(360e6 / (W0 * H0 * 4)), pool.n * 2, 96);
-      const buf = new Map();
-      let next = from, give = from, done = false, tick = 0;
-      const end = (at) => {
+    // the render workers: each draws and encodes two-second stretches (a keyframe at the start of each) with its
+    // own encoder, and the encoded frames go into the MP4 in order. A worker that breaks gives its unfinished
+    // frames back to the others; if none are left, the page does the rest.
+    let pool = null, poolFrames = 0, poolWhy = '', poolErr = '', poolN = 0;
+    const poolP = EXP.force !== 'single' && poolSupported(/^workers/.test(EXP.force || '')) && n > fps * 4 ? startPool({ W0, H0, fps, plan, vcfg, gop }).catch(() => null) : null;
+    const poolRun = () => new Promise((resolve) => {
+      const queue = [];
+      for (let a = 0; a < n; a += gop) queue.push({ from: a, to: Math.min(n, a + gop) });
+      const chunks = new Map(), live = new Set(pool.workers);
+      let next = 0, done = false, ref = null, refCfg = null, lastMove = performance.now(), tick = 0;
+      for (const wk of live) { wk.jobs = []; wk.out = 0; wk.cfgKey = null; wk.cfg = null; wk.started = false; wk.flushing = false; }
+      const end = () => {
         if (done) return;
         done = true; clearInterval(tick);
-        pool.onFrame = (k, bm) => bm.close(); pool.onDone = null; pool.onError = null;
-        for (const bm of buf.values()) bm.close();
-        buf.clear();
-        resolve(at);
+        pool.onChunk = null; pool.onDone = null; pool.onError = null; pool.onFlushed = null;
+        chunks.clear();
+        resolve(next);
       };
-      const feed = () => {
-        for (const wk of pool.workers) {
-          if (wk.busy || give >= n || EXP.cancel || fail) continue;
-          if (give - next >= ahead || ve.encodeQueueSize > 12) break;
-          const a = give, b = Math.min(n, give + B);
-          give = b; wk.busy = true;
-          wk.w.postMessage({ type: 'render', from: a, to: b });
+      const give = (wk) => {
+        if (done || !live.has(wk)) return;
+        // up to two stretches each, and not too far ahead of what's gone into the file
+        while (wk.out < 2 && queue.length && !fail && !EXP.cancel && queue[0].from - next < gop * live.size * 3) {
+          const jb = queue.shift();
+          jb.got = 0; wk.jobs.push(jb); wk.out++; wk.started = true; wk.flushing = false;
+          wk.w.postMessage({ type: 'render', from: jb.from, to: jb.to, test: false, keep: -1 });
         }
+        // nothing left to hand out: make its encoder give up the frames it's still holding
+        if (!queue.length && !wk.out && wk.jobs.length && !wk.flushing) { wk.flushing = true; wk.w.postMessage({ type: 'flush' }); }
+      };
+      const die = (wk, msg, wipe) => {
+        if (done || !live.has(wk)) return;
+        live.delete(wk);
+        try { wk.w.terminate(); } catch (e) { /* gone */ }
+        poolErr = poolErr || msg;
+        // what it hadn't delivered goes back on the queue from its first missing frame (a new stretch starts on a
+        // keyframe, so it joins on cleanly)
+        for (const jb of wk.jobs) {
+          if (wipe || ref === null) { for (let i = jb.from; i < jb.from + jb.got; i++) chunks.delete(i); jb.got = 0; }
+          if (jb.from + jb.got < jb.to) queue.push({ from: jb.from + jb.got, to: jb.to });
+        }
+        wk.jobs = [];
+        queue.sort((a, b) => a.from - b.from);
+        if (!live.size) { end(); return; }
+        for (const w2 of live) give(w2);
+        decide(); drain();
+      };
+      // every worker's encoder has to make the same stream settings (SPS/PPS), or players freeze where they
+      // change: the settings most of them made win, and a worker with others is let go before any of its frames
+      // go in
+      const decide = () => {
+        if (ref !== null || done) return;
+        const ws = [...live].filter((wk) => wk.started);
+        if (!ws.length || ws.some((wk) => wk.cfgKey === null)) return;
+        const count = new Map();
+        for (const wk of ws) count.set(wk.cfgKey, (count.get(wk.cfgKey) || 0) + 1);
+        ref = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        refCfg = ws.find((wk) => wk.cfgKey === ref).cfg;
+        cfgKey = ref;
+        for (const wk of ws) if (wk.cfgKey !== ref) die(wk, 'a worker’s encoder made different stream settings', true);
       };
       const drain = () => {
-        if (done) return;
-        while (buf.has(next) && ve.encodeQueueSize <= 12) {
-          const bm = buf.get(next);
-          buf.delete(next);
-          const vf = new VideoFrame(bm, { timestamp: ts(next), duration: fdur });
-          ve.encode(vf, { keyFrame: next % gop === 0 }); vf.close(); bm.close();
+        if (done || ref === null) return;
+        const was = next;
+        while (chunks.has(next)) {
+          const m = chunks.get(next);
+          chunks.delete(next);
+          muxer.addVideoChunkRaw(new Uint8Array(m.buf), m.key ? 'key' : 'delta', m.ts, m.dur, poolFrames ? undefined : { decoderConfig: refCfg });
           next++; poolFrames++;
+          // tests: break a worker (or all of them) partway
+          if (EXP.kill && poolFrames === EXP.kill.after) { for (const wk of [...live].slice(0, EXP.kill.all ? live.size : 1)) die(wk, 'test kill'); if (done) return; }
         }
-        const pct = Math.floor((next / n) * 100);
-        if (pct !== shown) { shown = pct; badge(pct + '%'); }
-        if (fail || EXP.cancel || next >= n) { end(next); return; }
-        feed();
+        if (next > was) {
+          lastMove = performance.now();
+          const pct = Math.floor((next / n) * 100);
+          if (pct !== shown) { shown = pct; badge(pct + '%'); }
+          for (const wk of live) if (wk.out < 2) give(wk);
+        }
+        if (fail || EXP.cancel || next >= n) end();
       };
-      pool.onFrame = (k, bm) => { if (k < next || done) { bm.close(); return; } buf.set(k, bm); drain(); };
-      pool.onDone = () => drain();
-      pool.onError = () => { poolWhy = 'error'; end(next); };
-      tick = setInterval(drain, 25);
-      feed();
+      pool.onChunk = (wk, m) => {
+        if (done || !live.has(wk)) return;
+        // a worker's frames come back in the order it was given them
+        const jb = wk.jobs[0];
+        if (!jb || m.i !== jb.from + jb.got) { die(wk, 'a worker’s frames came back out of order'); return; }
+        if (m.cfg) {
+          const k = keyOf(m.cfg.description) || m.cfg.codec;
+          if (wk.cfgKey === null) { wk.cfgKey = k; wk.cfg = m.cfg; } else if (k !== wk.cfgKey) EXP.reconfig = true;
+        }
+        chunks.set(m.i, m);
+        if (++jb.got >= jb.to - jb.from) wk.jobs.shift();
+        decide(); drain();
+      };
+      pool.onDone = (wk) => { wk.out = Math.max(0, wk.out - 1); give(wk); };
+      pool.onFlushed = (wk) => { if (wk.jobs.length) die(wk, 'a worker’s encoder lost frames'); };
+      pool.onError = (wk, msg) => die(wk, msg);
+      tick = setInterval(() => {
+        if (EXP.cancel) end();
+        else if (performance.now() - lastMove > 30000) { poolErr = poolErr || 'the render workers stalled'; end(); }
+      }, 500);
+      for (const wk of live) give(wk);
     });
-    // the workers draw the same frames as the page, to see which is quicker on this device and that they draw
-    // the same picture
-    const poolJob = (from, to, per, keep) => new Promise((ok) => {
-      let left = 0, kept = null;
-      pool.onFrame = (k, bm) => { if (k === keep && !kept) kept = bm; else bm.close(); };
-      pool.onDone = () => { if (--left <= 0) ok(kept); };
-      pool.onError = () => { if (kept) kept.close(); ok(null); };
-      for (let a = from, k = 0; a < to; a += per, k++) { left++; pool.workers[k % pool.n].w.postMessage({ type: 'render', from: a, to: Math.min(to, a + per) }); }
+    // test stretches for the race: drawn, encoded, waited for to the last frame, and thrown away. A worker that
+    // breaks is noted; `keep` frame comes back as a picture to check against the page's
+    const poolJob = (jobs) => new Promise((ok) => {
+      let left = jobs.length, kept = null, settled = false;
+      const bad = [], seen = new Set();
+      const fin = () => {
+        if (settled) return;
+        settled = true; clearTimeout(t);
+        pool.onFrame = null; pool.onDone = null; pool.onError = null;
+        ok({ ok: !bad.length, kept, bad });
+      };
+      const t = setTimeout(() => { poolErr = poolErr || 'a render worker took too long'; for (const wk of pool.workers) if (!seen.has(wk)) bad.push(wk); fin(); }, 30000);
+      const one = (wk) => { if (seen.has(wk)) return; seen.add(wk); if (--left <= 0) fin(); };
+      pool.onFrame = (k, bm) => { if (!kept) kept = bm; else bm.close(); };
+      pool.onDone = (wk) => one(wk);
+      pool.onError = (wk, msg) => { poolErr = poolErr || msg; if (!bad.includes(wk)) bad.push(wk); one(wk); };
+      jobs.forEach((jb, j) => pool.workers[j].w.postMessage({ type: 'render', test: true, keep: -1, ...jb }));
     });
     const small = (src) => { const c = new OffscreenCanvas(96, 54), x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 96, 54); return x.getImageData(0, 0, 96, 54).data; };
     let usePool = false, poolDiff = null;
@@ -12650,68 +12727,84 @@ async function exportVideo() {
     if (poolP) {
       const P0 = clamp(Math.ceil((plan.introDur + 0.5) * fps), 0, n - 1), K = Math.min(n - P0, 24);
       const keepCam = { camFrom: R.camFrom, camHold: R.camHold, view: { ...R.view }, fv: { ...R.fv } };
-      // the page's speed on a stretch of map frames: drawn and grabbed, not encoded
+      // the page's speed on a stretch of map frames: drawn, grabbed and encoded (by a spare encoder), waited for
+      // to the last frame. Not waiting is how a GPU looks free: it takes the work and does it later
       badge('testing…');
-      let pageSample = null;
-      const p0 = performance.now();
-      for (let k = P0; k < P0 + K; k++) {
-        exportStateAt(plan, k / fps); doRender();
-        const vf = new VideoFrame(canvas, { timestamp: 0 });
-        vf.close();
-        if (k === P0) pageSample = small(canvas);
-        if (k % 6 === 5) await yieldNow();
-      }
-      const pageMs = (performance.now() - p0) / K;
+      let pageSample = null, pageMs = Infinity, pe = null;
+      try {
+        pe = new VideoEncoder({ output: () => {}, error: () => {} });
+        pe.configure(vcfg);
+        const step = (k) => { exportStateAt(plan, k / fps); doRender(); const vf = new VideoFrame(canvas, { timestamp: ts(k), duration: fdur }); pe.encode(vf, { keyFrame: k === P0 }); vf.close(); };
+        for (let k = P0; k < Math.min(n, P0 + 3); k++) { step(k); if (k === P0) pageSample = small(canvas); }
+        await pe.flush();
+        const p0 = performance.now();
+        for (let k = P0; k < P0 + K; k++) { step(k); while (pe.encodeQueueSize > 8) await yieldNow(); if (k % 6 === 5) await yieldNow(); }
+        await pe.flush();
+        pageMs = (performance.now() - p0) / K;
+      } catch (e) { /* not usable: anything else wins */ }
+      try { if (pe && pe.state !== 'closed') pe.close(); } catch (e) { /* closed */ }
       Object.assign(R, keepCam);
       badge('workers…');
       pool = await poolP;
       race.page = pageMs;
       if (pool && !EXP.cancel) {
-        // the workers drawing on their own cores, then on the GPU: warm up (that builds their map layers), race,
-        // and check the picture against the page's
+        const introN = Math.ceil(plan.introDur * fps);
         const tryPool = async () => {
-          await poolJob(P0, P0 + pool.n, 1, -1);
+          // warm up on each kind of frame the video has (the intro, its reveal, the map), which builds each worker's
+          // layers and starts its encoder; a worker whose encoder won't start is left out
+          for (const k of [...new Set([0, Math.floor(introN * 0.6), introN, P0].map((x) => clamp(x, 0, n - 1)))]) {
+            const r = await poolJob(pool.workers.map(() => ({ from: k, to: k + 1 })));
+            if (r.kept) r.kept.close();
+            for (const wk of r.bad) poolDrop(pool, wk);
+            if (pool.n < 2 || EXP.cancel) return { ms: Infinity, diff: null };
+          }
+          // the race: a run of frames each, all at once
+          const per = clamp(Math.floor(n / (pool.n * 2)), 4, 12);
           const w0 = performance.now();
-          const bm = await poolJob(P0, P0 + K, Math.ceil(K / pool.n), P0);
-          const ms = (performance.now() - w0) / K;
+          const r = await poolJob(pool.workers.map((wk, j) => ({ from: Math.min(P0 + j * per, n - per), to: Math.min(P0 + j * per, n - per) + per, keep: j === 0 ? P0 : -1 })));
+          const ms = (performance.now() - w0) / (per * pool.n);
           let diff = null;
-          if (bm) {
-            const ws = small(bm), N = ws.length / 4;
+          if (r.kept) {
+            const ws = small(r.kept), N = ws.length / 4;
             let d = 0;
             for (let j = 0; j < ws.length; j += 4) d += Math.abs(ws[j] - pageSample[j]) + Math.abs(ws[j + 1] - pageSample[j + 1]) + Math.abs(ws[j + 2] - pageSample[j + 2]);
-            diff = d / (N * 3);
-            bm.close();
+            diff = pageSample ? d / (N * 3) : null;
+            r.kept.close();
           }
-          return diff !== null && diff < 10 ? { ms, diff } : { ms: Infinity, diff };
+          for (const wk of r.bad) poolDrop(pool, wk);
+          return r.ok && diff !== null && diff < 10 ? { ms, diff } : { ms: Infinity, diff };
         };
         const cpu = await tryPool();
         race.cpu = cpu.ms; poolDiff = cpu.diff;
         let gpu = { ms: Infinity, diff: null };
-        if (EXP.force !== 'workers-cpu' && !EXP.cancel && (await poolCanvas(pool, true))) { gpu = await tryPool(); race.gpu = gpu.ms; }
-        const best = Math.min(cpu.ms, gpu.ms);
-        usePool = isFinite(best) && (EXP.force === 'workers' || EXP.force === 'workers-cpu' || best < pageMs * 0.9);
-        if (usePool && cpu.ms <= gpu.ms && pool.gpu) await poolCanvas(pool, false);
+        if (EXP.force !== 'workers-cpu' && pool.n >= 2 && !EXP.cancel && (await poolPrep(pool, true))) { gpu = await tryPool(); race.gpu = gpu.ms; }
+        const cpuMs = EXP.force === 'workers-gpu' ? Infinity : cpu.ms, gpuMs = EXP.force === 'workers-cpu' ? Infinity : gpu.ms;
+        const best = Math.min(cpuMs, gpuMs);
+        usePool = pool.n >= 2 && isFinite(best) && (/^workers/.test(EXP.force || '') || best < pageMs * 0.9);
+        // a fresh encoder in each for the real thing, drawing wherever won
+        if (usePool && !(await poolPrep(pool, gpuMs < cpuMs))) usePool = false;
         if (usePool) poolDiff = pool.gpu ? gpu.diff : cpu.diff;
-        poolWhy = !isFinite(best) ? 'mismatch' : usePool ? '' : 'slower';
-        console.info('export workers', JSON.stringify({ workers: pool.n, race, use: usePool, gpu: pool.gpu }));
-      } else poolWhy = 'start';
+        const off = (x) => x.diff !== null && x.diff >= 10;
+        poolWhy = usePool ? '' : isFinite(best) ? 'slower' : off(cpu) || off(gpu) ? 'mismatch' : 'error';
+        console.info('export workers', JSON.stringify({ workers: pool.n, race, use: usePool, gpu: pool.gpu, err: poolErr }));
+      } else { poolWhy = 'start'; poolErr = poolErr || POOL.why || ''; }
     }
     let at = 0;
     if (usePool && !fail && !EXP.cancel) {
-      at = await poolRun(0);
+      poolN = pool.n;
+      at = await poolRun();
       stopPool(pool);
-      // a worker gave out partway: the page finishes it
-      if (at < n && !fail && !EXP.cancel) at = await singleRun(at, null);
+      // every worker gave out: the page finishes it
+      if (at < n && !fail && !EXP.cancel) at = await singleRun(at);
     } else {
       if (pool) stopPool(pool);
-      at = await singleRun(0, null);
+      at = await singleRun(0);
     }
-    await ve.flush();
-    ve.close();
+    if (ve) { await ve.flush(); ve.close(); }
     const secs = (performance.now() - st.t0) / 1000, sn = Math.max(1, st.n);
     EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / sn, grab: st.grab / sn, wait: st.wait / sn, secs, mode: mode === 'try' ? 'direct' : mode,
-      workers: poolFrames ? pool.n : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
-      cores: navigator.hardwareConcurrency || 0 };
+      workers: poolFrames ? poolN : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolErr, poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
+      cores: navigator.hardwareConcurrency || 0, hw: vcfg.hardwareAcceleration === 'prefer-hardware' };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
@@ -12748,33 +12841,66 @@ async function exportVideo() {
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
     (voiceMissing ? ` · ${voiceMissing} spoken line${voiceMissing > 1 ? 's' : ''} couldn’t be fetched from Scratch’s voice service, so the video doesn’t have ${voiceMissing > 1 ? 'them' : 'it'}.` : '') +
-    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'})` +
-      (EXP.stats.workers ? ` with ${EXP.stats.workers} render workers on the ${EXP.stats.gpu ? 'GPU' : 'CPU'} (${Math.round(EXP.stats.poolShare * 100)}% of the frames)` : '') +
-      (EXP.stats.race && EXP.stats.race.page ? ` · speed test, ms a frame: page ${EXP.stats.race.page.toFixed(1)}` + (EXP.stats.race.cpu !== undefined ? `, CPU workers ${isFinite(EXP.stats.race.cpu) ? EXP.stats.race.cpu.toFixed(1) : '✗'}` : '') +
-        (EXP.stats.race.gpu !== undefined ? `, GPU workers ${isFinite(EXP.stats.race.gpu) ? EXP.stats.race.gpu.toFixed(1) : '✗'}` : '') + ` (${EXP.stats.cores} cores)` : '') +
-      (EXP.stats.poolShare < 1 ? `; on the page: drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '') +
-      (EXP.stats.poolWhy === 'slower' ? ' · the render workers were slower here, so the page did it' : EXP.stats.poolWhy === 'start' ? ' · the render workers couldn’t start here' :
-        EXP.stats.poolWhy === 'mismatch' ? ' · the render workers drew a different picture here, so the page did it' : '') +
-      (EXP.stats.reconfig ? ' · the encoder changed its stream settings partway, which some players freeze on' : '') : '');
+    (EXP.stats ? exportSpeedNote(EXP.stats) : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
+}
+// how the render went, for the save dialog: enough to tell what this device was held up by
+function exportSpeedNote(x) {
+  const f1 = (v) => (isFinite(v) ? v.toFixed(1) : '✗');
+  const short = (m) => String(m || '').replace(/\s+/g, ' ').slice(0, 140);
+  let t = ` · Rendered at ${x.fps.toFixed(0)} frames/s (${x.x >= 1 ? x.x.toFixed(1) + '× real time' : (1 / x.x).toFixed(1) + '× slower than real time'})`;
+  if (x.workers) t += ` by ${x.workers} render workers drawing on the ${x.gpu ? 'GPU' : 'CPU'} and encoding side by side (${Math.round(x.poolShare * 100)}% of the frames)`;
+  t += x.hw ? ' · encoder: the graphics card’s' : ' · encoder: the browser’s own (no hardware H.264 found)';
+  if (x.race && x.race.page !== undefined) {
+    t += ` · speed test, drawn and encoded, ms a frame: page ${f1(x.race.page)}`;
+    if (x.race.cpu !== undefined) t += `, CPU workers ${f1(x.race.cpu)}`;
+    if (x.race.gpu !== undefined) t += `, GPU workers ${f1(x.race.gpu)}`;
+    t += ` (${x.cores} cores)`;
+  }
+  if (x.poolShare < 1) t += `; on the page: drawing ${x.draw.toFixed(0)} ms, grabbing ${x.grab.toFixed(0)} ms (${x.mode}), waiting on the encoder ${x.wait.toFixed(0)} ms a frame`;
+  if (x.poolWhy === 'slower') t += ' · the render workers were slower here, so the page did it';
+  else if (x.poolWhy === 'start') t += ' · the render workers couldn’t start here' + (x.poolErr ? ` (${short(x.poolErr)})` : '');
+  else if (x.poolWhy === 'mismatch') t += ' · the render workers drew a different picture here, so the page did it';
+  else if (x.poolWhy === 'error') t += ' · the render workers broke in the speed test, so the page did it' + (x.poolErr ? ` (${short(x.poolErr)})` : '');
+  else if (x.workers && x.poolErr) t += x.poolShare < 1 ? ` · the render workers broke partway, so the page finished it (${short(x.poolErr)})` : ` · a render worker broke partway and the others took over (${short(x.poolErr)})`;
+  if (x.reconfig) t += ' · the encoder changed its stream settings partway, which some players freeze on';
+  return t;
 }
 function stopExport() { if (EXP.busy) EXP.cancel = true; }
 
 // ============================================================== Quaker v2 · render workers
-// Video export in parallel: several workers each run this same app code with an OffscreenCanvas, draw their share
-// of the frames and hand them back as ImageBitmaps; the page puts them in order and encodes them. Every frame is
-// a pure function of its time, so the workers don't need to talk to each other. They draw on the CPU
-// (willReadFrequently), which spreads across cores instead of queueing up behind one GPU thread.
+// Video export in parallel: several workers each run this same app code with an OffscreenCanvas, and each one
+// draws AND encodes its own stretches of the video (two seconds each, starting on a keyframe) with its own
+// encoder. The page only puts the encoded pieces in order. One encoder on the page was the wall: it takes frames
+// one after another, however fast they're drawn. Every frame is a pure function of its time, so the workers
+// don't need to talk to each other.
 
 // ---------------------------------------------------------------- inside a worker
 function workerMain() {
-  let plan = null, fps = 30, size = null;
-  self.onmessage = async (e) => {
-    const m = e.data;
+  let plan = null, fps = 30, size = null, vcfg = null, gop = 60, enc = null, testing = false, gpu = false, chain = Promise.resolve();
+  const post = (m, t) => self.postMessage(m, t || []);
+  const bytes = (d) => (d ? (d instanceof ArrayBuffer ? d.slice(0) : new Uint8Array(d.buffer, d.byteOffset, d.byteLength).slice().buffer) : null);
+  const plainCs = (cs) => (cs ? { primaries: cs.primaries, transfer: cs.transfer, matrix: cs.matrix, fullRange: cs.fullRange } : undefined);
+  const newEncoder = () => {
+    const e = new VideoEncoder({
+      output: (c, meta) => {
+        if (testing) return;
+        const buf = new ArrayBuffer(c.byteLength);
+        c.copyTo(buf);
+        const dc = meta && meta.decoderConfig;
+        post({ type: 'chunk', i: Math.round((c.timestamp * fps) / 1e6), key: c.type === 'key', ts: c.timestamp, dur: c.duration, buf,
+          cfg: dc ? { codec: dc.codec, codedWidth: dc.codedWidth, codedHeight: dc.codedHeight, description: bytes(dc.description), colorSpace: plainCs(dc.colorSpace) } : null }, [buf]);
+      },
+      error: (err) => post({ type: 'error', msg: 'encoder: ' + String((err && err.message) || err) }),
+    });
+    e.configure(vcfg);
+    return e;
+  };
+  const handle = async (m) => {
     try {
       if (m.type === 'init') {
-        plan = m.plan; fps = m.fps;
+        plan = m.plan; fps = m.fps; vcfg = m.vcfg; gop = m.gop;
         S.prefs = m.prefs; S.eff = m.eff; UI_LANG = m.prefs.lang === 'en' ? 'en' : 'ja';
         setFontFamilies(m.fam, m.sc);
         const nf = await workerFonts(m.fonts);
@@ -12788,26 +12914,49 @@ function workerMain() {
         R.K = m.K; R.staleMs = 0;
         R.camFrom = m.camFrom; R.camHold = m.camHold;
         if (m.view) { R.view = m.view; R.fv = m.fv || m.view; }
-        self.postMessage({ type: 'ready', fonts: nf });
-      } else if (m.type === 'canvas') {
-        // draw on the GPU (through the browser's GPU process) or on this core
-        initRenderer(new OffscreenCanvas(size.W0, size.H0), m.gpu ? undefined : { willReadFrequently: true });
-        R.K = size.K; R.staleMs = 0; INTRO.key = ''; INTRO.bg = null; INTRO.tmp = null; CARD.tmp = null;
-        self.postMessage({ type: 'canvasok' });
+        post({ type: 'ready', fonts: nf, enc: typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' });
+      } else if (m.type === 'prep') {
+        // draw on the GPU (through the browser's GPU process) or on this core, and start the encoder afresh
+        if (m.gpu !== gpu) {
+          gpu = m.gpu;
+          initRenderer(new OffscreenCanvas(size.W0, size.H0), gpu ? undefined : { willReadFrequently: true });
+          R.K = size.K; R.staleMs = 0; INTRO.key = ''; INTRO.bg = null; INTRO.tmp = null; CARD.tmp = null;
+        }
+        if (enc && enc.state !== 'closed') { enc.reset(); enc.configure(vcfg); } else enc = null;
+        post({ type: 'prepok' });
       } else if (m.type === 'render') {
+        // a stretch of frames, the first one a keyframe; a test stretch is waited for to its last frame and thrown away
+        testing = !!m.test;
+        if (!enc) enc = newEncoder();
+        const fdur = Math.round(1e6 / fps);
         for (let i = m.from; i < m.to; i++) {
           exportStateAt(plan, i / fps);
           const F = { world: S.world, tau: S.tau, prefs: S.eff, idle: false, originMs: S.originMs, tStart: T_START, selected: null, showEvents: false, pick: false, selEv: null };
           if (S.intro) renderIntroFrame(F, S.intro); else renderFrame(F);
           const bm = R.canvas.transferToImageBitmap();
-          self.postMessage({ type: 'frame', i, bm }, [bm]);
+          const vf = new VideoFrame(bm, { timestamp: Math.round((i * 1e6) / fps), duration: fdur });
+          enc.encode(vf, { keyFrame: i === m.from || i % gop === 0 });
+          vf.close();
+          if (i === m.keep) post({ type: 'frame', i, bm }, [bm]); else bm.close();
+          while (enc.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 1));
         }
-        self.postMessage({ type: 'done', from: m.from, to: m.to });
+        if (m.test) await enc.flush();
+        post({ type: 'done', from: m.from, to: m.to });
+      } else if (m.type === 'flush') {
+        if (enc) await enc.flush();
+        post({ type: 'flushed' });
       }
     } catch (err) {
-      self.postMessage({ type: 'error', msg: String((err && err.stack) || err) });
+      post({ type: 'error', msg: String((err && err.message) || err) + (err && err.stack ? ' @ ' + String(err.stack).split('\n').slice(1, 3).join(' ').replace(/\s+/g, ' ').slice(0, 160) : '') });
     }
   };
+  // one message at a time, in order: a stretch waits for the one before it to finish
+  self.onmessage = (e) => { chain = chain.then(() => handle(e.data)); };
+  // frames are drawn in one go, so an error out of some timer or promise later (page-only code that slipped
+  // through) can't have touched one: say so, but don't take the worker down for it
+  const stray = (msg) => post({ type: 'warn', msg: String(msg).slice(0, 300) });
+  self.addEventListener('error', (e) => { e.preventDefault(); stray(e.message + (e.lineno ? ' @' + (e.lineno - 1) : '')); });
+  self.addEventListener('unhandledrejection', (e) => { e.preventDefault(); stray((e.reason && e.reason.message) || e.reason); });
 }
 // the fonts the page has: imported files as they are, and the Google Fonts pieces the page has loaded, found in
 // the same stylesheets
@@ -12839,7 +12988,7 @@ const fontKeyOf = (family, weight, style, range) => [String(family).replace(/^['
   String(range || '').replace(/\s+/g, '').toUpperCase()].join('|');
 
 // ---------------------------------------------------------------- on the page
-const POOL = { src: null };
+const POOL = { src: null, why: '' };
 function poolSupported(force) {
   try {
     return typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && typeof OffscreenCanvas.prototype.transferToImageBitmap === 'function' &&
@@ -12863,7 +13012,7 @@ function poolInitMsg(o) {
     prefs: JSON.parse(JSON.stringify(S.prefs)), eff: JSON.parse(JSON.stringify(S.eff)), originMs: S.originMs, follow: S.follow,
     fam, sc, fonts: { files: FONTS.files.map((f) => ({ ...f, raw: f.raw.slice(0) })), google, css },
     W0: o.W0, H0: o.H0, K: Math.max(o.W0 / W, o.H0 / H), camFrom: R.camFrom ? JSON.parse(JSON.stringify(R.camFrom)) : null, camHold: R.camHold,
-    view: { ...R.view }, fv: { ...R.fv }, plan: o.plan, fps: o.fps,
+    view: { ...R.view }, fv: { ...R.fv }, plan: o.plan, fps: o.fps, vcfg: o.vcfg, gop: o.gop,
   };
 }
 // start the workers; resolves to the pool, or null if they couldn't get going
@@ -12878,44 +13027,57 @@ async function startPool(o) {
   let n = clamp((navigator.hardwareConcurrency || 4) - 1, 2, mobile ? 3 : 6);
   if (navigator.deviceMemory) n = Math.min(n, Math.max(2, Math.floor(navigator.deviceMemory)));
   const msg = poolInitMsg(o);
-  const pool = { workers: [], onFrame: null, onDone: null, onError: null, onAck: null, dead: false, n, gpu: false };
+  const pool = { workers: [], all: [], onFrame: null, onDone: null, onError: null, onAck: null, onChunk: null, onFlushed: null, dead: false, n, gpu: false, why: '' };
   const ready = [];
   for (let k = 0; k < n; k++) {
     let w;
     try { w = new Worker(POOL.src); } catch (e) { break; }
-    const wk = { w, busy: false, k };
-    pool.workers.push(wk);
+    const wk = { w, busy: false, k, ok: false };
+    pool.all.push(wk);
     ready.push(new Promise((ok) => {
       const t = setTimeout(() => ok(false), 30000);
       w.onmessage = (e) => {
         const m = e.data;
-        if (m.type === 'ready') { clearTimeout(t); ok(m.fonts >= (msg.fonts.google.length ? 1 : 0)); }
-        else if (m.type === 'frame') { if (pool.onFrame) pool.onFrame(m.i, m.bm); else m.bm.close(); }
-        else if (m.type === 'done') { wk.busy = false; if (pool.onDone) pool.onDone(wk); }
-        else if (m.type === 'canvasok') { if (pool.onAck) pool.onAck(wk); }
-        else if (m.type === 'error') { clearTimeout(t); console.warn('render worker', m.msg); ok(false); if (pool.onError) pool.onError(m.msg); }
+        if (m.type === 'chunk') { if (pool.onChunk) pool.onChunk(wk, m); }
+        else if (m.type === 'ready') { clearTimeout(t); wk.ok = m.enc && m.fonts >= (msg.fonts.google.length ? 1 : 0); if (!m.enc) pool.why = pool.why || 'no video encoder in a worker'; ok(wk.ok); }
+        else if (m.type === 'frame') { if (pool.onFrame) pool.onFrame(m.i, m.bm, wk); else m.bm.close(); }
+        else if (m.type === 'done') { wk.busy = false; if (pool.onDone) pool.onDone(wk, m); }
+        else if (m.type === 'prepok') { if (pool.onAck) pool.onAck(wk); }
+        else if (m.type === 'flushed') { if (pool.onFlushed) pool.onFlushed(wk); }
+        else if (m.type === 'warn') console.warn('render worker (kept going)', m.msg);
+        else if (m.type === 'error') { clearTimeout(t); console.warn('render worker', m.msg); pool.why = pool.why || m.msg; ok(false); if (pool.onError) pool.onError(wk, m.msg); }
       };
-      w.onerror = (e) => { clearTimeout(t); console.warn('render worker', e.message); ok(false); if (pool.onError) pool.onError(e.message); };
+      w.onerror = (e) => { clearTimeout(t); const em = String(e.message) + (e.lineno ? ' @' + (e.lineno - 1) + ':' + e.colno : ''); console.warn('render worker', em); pool.why = pool.why || em; ok(false); if (pool.onError) pool.onError(wk, em); };
     }));
     // each gets its own copy (the font files are sent, not shared)
     w.postMessage(k ? poolInitMsg(o) : msg);
   }
-  const oks = await Promise.all(ready);
-  if (!pool.workers.length || oks.some((x) => !x)) { stopPool(pool); return null; }
+  await Promise.all(ready);
+  pool.workers = pool.all.filter((wk) => wk.ok);
+  for (const wk of pool.all) if (!wk.ok) { try { wk.w.terminate(); } catch (e) { /* gone */ } }
+  pool.n = pool.workers.length;
+  POOL.why = pool.why;
+  if (pool.n < 2) { stopPool(pool); return null; }
   return pool;
 }
 function stopPool(pool) {
   if (!pool || pool.dead) return;
   pool.dead = true;
-  for (const wk of pool.workers) { try { wk.w.terminate(); } catch (e) { /* gone */ } }
+  for (const wk of pool.all) { try { wk.w.terminate(); } catch (e) { /* gone */ } }
 }
-// switch every worker to drawing on the GPU or on its own core
-function poolCanvas(pool, gpu) {
+// a worker out of the pool for good (its encoder wouldn't start, or it broke)
+function poolDrop(pool, wk) {
+  try { wk.w.terminate(); } catch (e) { /* gone */ }
+  pool.workers = pool.workers.filter((x) => x !== wk);
+  pool.n = pool.workers.length;
+}
+// every worker drawing on the GPU or on its own core, with a fresh encoder
+function poolPrep(pool, gpu) {
   return new Promise((ok) => {
     let left = pool.workers.length;
     const t = setTimeout(() => ok(false), 10000);
     pool.onAck = () => { if (--left <= 0) { clearTimeout(t); pool.gpu = gpu; ok(true); } };
-    for (const wk of pool.workers) wk.w.postMessage({ type: 'canvas', gpu });
+    for (const wk of pool.workers) wk.w.postMessage({ type: 'prep', gpu });
   });
 }
 
