@@ -12646,6 +12646,7 @@ async function exportVideo() {
     });
     const small = (src) => { const c = new OffscreenCanvas(96, 54), x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 96, 54); return x.getImageData(0, 0, 96, 54).data; };
     let usePool = false, poolDiff = null;
+    const race = {};
     if (poolP) {
       const P0 = clamp(Math.ceil((plan.introDur + 0.5) * fps), 0, n - 1), K = Math.min(n - P0, 24);
       const keepCam = { camFrom: R.camFrom, camHold: R.camHold, view: { ...R.view }, fv: { ...R.fv } };
@@ -12664,21 +12665,35 @@ async function exportVideo() {
       Object.assign(R, keepCam);
       badge('workers…');
       pool = await poolP;
+      race.page = pageMs;
       if (pool && !EXP.cancel) {
-        await poolJob(P0, P0 + pool.n, 1, -1);
-        const w0 = performance.now();
-        const bm = await poolJob(P0, P0 + K, Math.ceil(K / pool.n), P0);
-        const workerMs = (performance.now() - w0) / K;
-        if (bm) {
-          const ws = small(bm), N = ws.length / 4;
-          let d = 0;
-          for (let j = 0; j < ws.length; j += 4) d += Math.abs(ws[j] - pageSample[j]) + Math.abs(ws[j + 1] - pageSample[j + 1]) + Math.abs(ws[j + 2] - pageSample[j + 2]);
-          poolDiff = d / (N * 3);
-          bm.close();
-        }
-        usePool = poolDiff !== null && poolDiff < 10 && (EXP.force === 'workers' || workerMs < pageMs * 0.9);
-        poolWhy = poolDiff === null || poolDiff >= 10 ? 'mismatch' : usePool ? '' : 'slower';
-        console.info('export workers', JSON.stringify({ workers: pool.n, workerMs, pageMs, diff: poolDiff, use: usePool }));
+        // the workers drawing on their own cores, then on the GPU: warm up (that builds their map layers), race,
+        // and check the picture against the page's
+        const tryPool = async () => {
+          await poolJob(P0, P0 + pool.n, 1, -1);
+          const w0 = performance.now();
+          const bm = await poolJob(P0, P0 + K, Math.ceil(K / pool.n), P0);
+          const ms = (performance.now() - w0) / K;
+          let diff = null;
+          if (bm) {
+            const ws = small(bm), N = ws.length / 4;
+            let d = 0;
+            for (let j = 0; j < ws.length; j += 4) d += Math.abs(ws[j] - pageSample[j]) + Math.abs(ws[j + 1] - pageSample[j + 1]) + Math.abs(ws[j + 2] - pageSample[j + 2]);
+            diff = d / (N * 3);
+            bm.close();
+          }
+          return diff !== null && diff < 10 ? { ms, diff } : { ms: Infinity, diff };
+        };
+        const cpu = await tryPool();
+        race.cpu = cpu.ms; poolDiff = cpu.diff;
+        let gpu = { ms: Infinity, diff: null };
+        if (EXP.force !== 'workers-cpu' && !EXP.cancel && (await poolCanvas(pool, true))) { gpu = await tryPool(); race.gpu = gpu.ms; }
+        const best = Math.min(cpu.ms, gpu.ms);
+        usePool = isFinite(best) && (EXP.force === 'workers' || EXP.force === 'workers-cpu' || best < pageMs * 0.9);
+        if (usePool && cpu.ms <= gpu.ms && pool.gpu) await poolCanvas(pool, false);
+        if (usePool) poolDiff = pool.gpu ? gpu.diff : cpu.diff;
+        poolWhy = !isFinite(best) ? 'mismatch' : usePool ? '' : 'slower';
+        console.info('export workers', JSON.stringify({ workers: pool.n, race, use: usePool, gpu: pool.gpu }));
       } else poolWhy = 'start';
     }
     let at = 0;
@@ -12695,7 +12710,8 @@ async function exportVideo() {
     ve.close();
     const secs = (performance.now() - st.t0) / 1000, sn = Math.max(1, st.n);
     EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / sn, grab: st.grab / sn, wait: st.wait / sn, secs, mode: mode === 'try' ? 'direct' : mode,
-      workers: poolFrames ? pool.n : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolDiff, reconfig: EXP.reconfig };
+      workers: poolFrames ? pool.n : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
+      cores: navigator.hardwareConcurrency || 0 };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
@@ -12733,7 +12749,9 @@ async function exportVideo() {
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
     (voiceMissing ? ` · ${voiceMissing} spoken line${voiceMissing > 1 ? 's' : ''} couldn’t be fetched from Scratch’s voice service, so the video doesn’t have ${voiceMissing > 1 ? 'them' : 'it'}.` : '') +
     (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'})` +
-      (EXP.stats.workers ? ` with ${EXP.stats.workers} render workers (${Math.round(EXP.stats.poolShare * 100)}% of the frames)` : '') +
+      (EXP.stats.workers ? ` with ${EXP.stats.workers} render workers on the ${EXP.stats.gpu ? 'GPU' : 'CPU'} (${Math.round(EXP.stats.poolShare * 100)}% of the frames)` : '') +
+      (EXP.stats.race && EXP.stats.race.page ? ` · speed test, ms a frame: page ${EXP.stats.race.page.toFixed(1)}` + (EXP.stats.race.cpu !== undefined ? `, CPU workers ${isFinite(EXP.stats.race.cpu) ? EXP.stats.race.cpu.toFixed(1) : '✗'}` : '') +
+        (EXP.stats.race.gpu !== undefined ? `, GPU workers ${isFinite(EXP.stats.race.gpu) ? EXP.stats.race.gpu.toFixed(1) : '✗'}` : '') + ` (${EXP.stats.cores} cores)` : '') +
       (EXP.stats.poolShare < 1 ? `; on the page: drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '') +
       (EXP.stats.poolWhy === 'slower' ? ' · the render workers were slower here, so the page did it' : EXP.stats.poolWhy === 'start' ? ' · the render workers couldn’t start here' :
         EXP.stats.poolWhy === 'mismatch' ? ' · the render workers drew a different picture here, so the page did it' : '') +
@@ -12751,7 +12769,7 @@ function stopExport() { if (EXP.busy) EXP.cancel = true; }
 
 // ---------------------------------------------------------------- inside a worker
 function workerMain() {
-  let plan = null, fps = 30;
+  let plan = null, fps = 30, size = null;
   self.onmessage = async (e) => {
     const m = e.data;
     try {
@@ -12765,11 +12783,17 @@ function workerMain() {
         S.world = buildWorld(S.DB, S.doc, S.eff);
         S.originMs = m.originMs; S.originFixed = true;
         S.state = 'playing'; S.recording = true; S.exporting = true; S.follow = m.follow;
+        size = { W0: m.W0, H0: m.H0, K: m.K };
         initRenderer(new OffscreenCanvas(m.W0, m.H0), { willReadFrequently: true });
         R.K = m.K; R.staleMs = 0;
         R.camFrom = m.camFrom; R.camHold = m.camHold;
         if (m.view) { R.view = m.view; R.fv = m.fv || m.view; }
         self.postMessage({ type: 'ready', fonts: nf });
+      } else if (m.type === 'canvas') {
+        // draw on the GPU (through the browser's GPU process) or on this core
+        initRenderer(new OffscreenCanvas(size.W0, size.H0), m.gpu ? undefined : { willReadFrequently: true });
+        R.K = size.K; R.staleMs = 0; INTRO.key = ''; INTRO.bg = null; INTRO.tmp = null; CARD.tmp = null;
+        self.postMessage({ type: 'canvasok' });
       } else if (m.type === 'render') {
         for (let i = m.from; i < m.to; i++) {
           exportStateAt(plan, i / fps);
@@ -12854,7 +12878,7 @@ async function startPool(o) {
   let n = clamp((navigator.hardwareConcurrency || 4) - 1, 2, mobile ? 3 : 6);
   if (navigator.deviceMemory) n = Math.min(n, Math.max(2, Math.floor(navigator.deviceMemory)));
   const msg = poolInitMsg(o);
-  const pool = { workers: [], onFrame: null, onDone: null, onError: null, dead: false, n };
+  const pool = { workers: [], onFrame: null, onDone: null, onError: null, onAck: null, dead: false, n, gpu: false };
   const ready = [];
   for (let k = 0; k < n; k++) {
     let w;
@@ -12868,6 +12892,7 @@ async function startPool(o) {
         if (m.type === 'ready') { clearTimeout(t); ok(m.fonts >= (msg.fonts.google.length ? 1 : 0)); }
         else if (m.type === 'frame') { if (pool.onFrame) pool.onFrame(m.i, m.bm); else m.bm.close(); }
         else if (m.type === 'done') { wk.busy = false; if (pool.onDone) pool.onDone(wk); }
+        else if (m.type === 'canvasok') { if (pool.onAck) pool.onAck(wk); }
         else if (m.type === 'error') { clearTimeout(t); console.warn('render worker', m.msg); ok(false); if (pool.onError) pool.onError(m.msg); }
       };
       w.onerror = (e) => { clearTimeout(t); console.warn('render worker', e.message); ok(false); if (pool.onError) pool.onError(e.message); };
@@ -12883,6 +12908,15 @@ function stopPool(pool) {
   if (!pool || pool.dead) return;
   pool.dead = true;
   for (const wk of pool.workers) { try { wk.w.terminate(); } catch (e) { /* gone */ } }
+}
+// switch every worker to drawing on the GPU or on its own core
+function poolCanvas(pool, gpu) {
+  return new Promise((ok) => {
+    let left = pool.workers.length;
+    const t = setTimeout(() => ok(false), 10000);
+    pool.onAck = () => { if (--left <= 0) { clearTimeout(t); pool.gpu = gpu; ok(true); } };
+    for (const wk of pool.workers) wk.w.postMessage({ type: 'canvas', gpu });
+  });
 }
 
 })();
