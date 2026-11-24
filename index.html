@@ -464,6 +464,8 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
 .slots .nm.lvl .shi { grid-row: span 2; }
 .slots .nm.lvl small { grid-column: 2; }
 .slots.off { opacity: 0.45; }
+.vchecks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; margin: 4px 0 10px; }
+.vchecks.off, .grid.off { opacity: 0.45; }
 .intro-ctl { display: flex; flex-direction: column; gap: 10px; }
 .intro-ctl .f { margin: 0; }
 .set-h { font: 600 13px var(--font-num); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 18px 0 2px; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -2490,7 +2492,8 @@ function normalizeDoc(d) {
     id: k.id || newId('c'), t: num(k.t, 0), target: ['epicenter', 'fit', 'report', 'custom', 'follow', 'all'].includes(k.target) ? k.target : 'custom',
     ev: k.ev || doc.events[0].id, lat: num(k.lat, 38), lon: num(k.lon, -77), r: clamp(num(k.r, 300), 10, 6000), dur: clamp(num(k.dur, 1.6), 0, 30), ease: k.ease || 'default',
   }));
-  doc.cues = (Array.isArray(doc.cues) ? doc.cues : []).map((c) => ({ id: c.id || newId('s'), t: num(c.t, 0), sound: String(c.sound || 'ping'), vol: clamp(num(c.vol, 1), 0, 2) }));
+  doc.cues = (Array.isArray(doc.cues) ? doc.cues : []).map((c) => ({ id: c.id || newId('s'), t: num(c.t, 0), sound: String(c.sound || 'ping'), vol: clamp(num(c.vol, 1), 0, 2),
+    say: typeof c.say === 'string' ? c.say.slice(0, 600) : '', lang: typeof c.lang === 'string' ? c.lang : 'auto' }));
   doc.sensors = { density: 1, custom: [], ...(doc.sensors || {}) };
   doc.sensors.density = clamp(num(doc.sensors.density, 1), 0.05, 1);
   doc.sensors.custom = (Array.isArray(doc.sensors.custom) ? doc.sensors.custom : []).map((s, i) => ({
@@ -2731,6 +2734,9 @@ function applyLevelSounds(world, prefs) {
   const fc = fcSoundTriggers(world, prefs);
   const drop = new Set(fc.filter((s) => s.replace).map((s) => s.rep));
   world.sounds = base.filter((s) => !(s.rep && drop.has(s.rep))).concat(fc, levelSoundTriggers(world, prefs)).sort((a, b) => a.t - b.t);
+  // spoken lines, and fetch them ahead of when they're needed
+  world.voice = voiceLines(world, prefs);
+  voicePrefetchSoon(world.voice, prefs);
 }
 function evOf(world, id) {
   if (!id || id === 'auto') return null;
@@ -6029,7 +6035,7 @@ function parsePattern(str) {
 const PATTERN_DEFAULT = { name: 'My sound', notes: 'E6 C6 - E6 C6', step: 0.16, len: 0.14, wave: 'sine', bell: true, repeat: 1, gain: 0.3 };
 
 const AU = {
-  ctx: null, master: null, recDest: null, rumbleGain: null, rumbleOn: true, offAt: 0,
+  ctx: null, master: null, recDest: null, rumbleGain: null, rumbleOn: true, offAt: 0, offline: false, vEnd: 0,
   on: true, vol: 0.7, buffers: new Map(), files: [], patterns: [], slots: { ...SOUND_DEFAULTS }, slotVol: {},
   ensure() {
     try {
@@ -6097,9 +6103,30 @@ const AU = {
       const buf = this.buffers.get(key);
       if (buf) { const src = this.ctx.createBufferSource(); src.buffer = buf; src.connect(dest); src.start(t); dur = buf.duration; }
     } else if (kind === 'p:') { const P = this.patterns.find((p) => p.id === key); if (P) dur = this.playPattern(dest, t, P); }
-    // release the node once the sound (however long) has finished
-    setTimeout(() => { try { dest.disconnect(); } catch (e) { /* gone */ } }, (dur + startAt + 1.5) * 1000);
+    // release the node once the sound (however long) has finished. Not in an offline mix: it renders after
+    // everything is scheduled, so a timer could cut off the sounds near the end of a long video
+    if (!this.offline) setTimeout(() => { try { dest.disconnect(); } catch (e) { /* gone */ } }, (dur + startAt + 1.5) * 1000);
     return dur;
+  },
+  // spoken lines: one after another, never over each other; a line that would start more than `late` seconds
+  // after it was due is dropped
+  playVoice(bufs, rate = 1, vol = 1, late = 8) {
+    if (!this.ctx || !this.on || !bufs.length) return 0;
+    const now = this.ctx.currentTime + 0.02 + (this.offAt || 0);
+    if (!(this.vEnd < now + 60)) this.vEnd = 0;
+    let t = Math.max(now, (this.vEnd || 0) + 0.12);
+    if (t - now > late) return 0;
+    const dest = this.ctx.createGain();
+    dest.gain.value = clamp(vol, 0, 2);
+    dest.connect(this.master);
+    for (const b of bufs) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = b; src.playbackRate.value = rate; src.connect(dest); src.start(t);
+      t += b.duration / rate + 0.06;
+    }
+    this.vEnd = t;
+    if (!this.offline) setTimeout(() => { try { dest.disconnect(); } catch (e) { /* gone */ } }, (t - this.ctx.currentTime + 1.5) * 1000);
+    return t - now;
   },
   has(id) {
     if (!id || id === 'none' || id === 'default') return true;
@@ -6290,6 +6317,580 @@ async function removeSoundFile(id) {
   AU.buffers.delete(id);
   await IDB.del(id);
   syncSoon();
+}
+
+// ============================================================== Quaker v2 · voice
+// Spoken announcements: the EEW, the countdown at your location, intensity flashes, reports, tsunami and
+// long-period information, custom boxes and "say" cues, in ten languages. The audio comes from Scratch's text to
+// speech service (Amazon Polly, the voices behind Scratch's Text to Speech blocks), is kept in this browser after
+// the first time, and goes into exported videos. Where that service can't be reached, live playback falls back
+// to this device's own voice (which a video can't capture).
+
+// Scratch's languages that have lines written for them. single: Scratch only has a female voice there, and plays
+// it slower for the "male" voices
+const VOICE_LANGS = {
+  ja: { loc: 'ja-JP', name: '日本語 Japanese', dec: '.' },
+  en: { loc: 'en-US', name: 'English', dec: '.' },
+  zh: { loc: 'cmn-CN', name: '中文 Chinese (Mandarin)', single: true, dec: '.' },
+  ko: { loc: 'ko-KR', name: '한국어 Korean', single: true, dec: '.' },
+  es: { loc: 'es-ES', name: 'Español Spanish', dec: ',' },
+  pt: { loc: 'pt-BR', name: 'Português (Brasil) Portuguese', dec: ',' },
+  fr: { loc: 'fr-FR', name: 'Français French', dec: ',' },
+  de: { loc: 'de-DE', name: 'Deutsch German', dec: ',' },
+  it: { loc: 'it-IT', name: 'Italiano Italian', dec: ',' },
+  ru: { loc: 'ru-RU', name: 'Русский Russian', dec: ',' },
+};
+// Scratch's voices: gender asked of the service and the playback rate (it shifts pitch and speed together)
+const VOICE_KINDS = {
+  alto: { label: 'Alto (female)', g: 'female', rate: 1 },
+  tenor: { label: 'Tenor (male)', g: 'male', rate: 1, single: 0.89 },
+  squeak: { label: 'Squeak (higher)', g: 'female', rate: 1.19 },
+  giant: { label: 'Giant (deeper)', g: 'male', rate: 0.84, single: 0.79 },
+};
+const VOICE_DEFAULT = { on: true, lang: 'auto', voice: 'alto', vol: 1, delay: 1.2, eew: true, update: false, cancel: true, countdown: false,
+  flash: true, report: true, tsunami: true, longperiod: true, custom: true };
+const VOICE_HOST = 'https://synthesis-service.scratch.mit.edu';
+
+// ---------------------------------------------------------------- the lines
+// {I}: intensity, {M}: magnitude, {D}: depth, {R}: region, {A}: areas, {n}: number, {k}: class
+const VOICE_TEXT = {
+  ja: {
+    I: (i) => '震度' + SH_JP[i], depth: (d) => (d === 'shallow' ? 'ごく浅い' : d + 'キロ'), join: '、', more: 'など',
+    warn: '緊急地震速報です。強い揺れに警戒してください。', where: '震源は{R}です。',
+    warnMore: '緊急地震速報。{A}では強い揺れに警戒してください。',
+    special: '緊急地震速報の特別警報です。身の安全を確保してください。',
+    forecast: '緊急地震速報、予報です。{R}で地震。', fcMax: '予想最大震度は{I}です。',
+    single: '{R}で地震。震度は推定されていません。', plum: '{R}で揺れを検知しました。',
+    update: '第{n}報。マグニチュード{M}、予想最大震度{I}。', updateNoI: '第{n}報。マグニチュード{M}。',
+    cancel: '先ほどの緊急地震速報は取り消されました。',
+    count: '揺れが来るまで、あと{n}秒。', arrive: '揺れが到達しました。',
+    flash: '震度速報です。{I}を観測したのは、{A}です。',
+    report: '震源・震度情報です。震源は{R}、震源の深さは{D}、地震の規模はマグニチュード{M}と推定されます。最大震度は{I}です。',
+    epicenter: '震源に関する情報です。震源は{R}、震源の深さは{D}、地震の規模はマグニチュード{M}と推定されます。',
+    tsuNone: 'この地震による津波の心配はありません。', tsuSlight: '若干の海面変動があるかもしれませんが、被害の心配はありません。', tsuOn: '現在、津波警報などが発表されています。',
+    tsu3: '大津波警報が発表されました。直ちに高台や避難ビルなど、安全な場所へ避難してください。',
+    tsu2: '津波警報が発表されました。直ちに海岸や川沿いから離れ、高台へ避難してください。',
+    tsu1: '津波注意報が発表されました。海の中にいる人は、直ちに海から上がって、海岸から離れてください。',
+    tsu0: '津波予報です。若干の海面変動が予想されますが、被害の心配はありません。',
+    lp: '長周期地震動に関する観測情報です。長周期地震動階級{k}を観測しました。',
+    sample: '緊急地震速報です。強い揺れに警戒してください。',
+  },
+  en: {
+    I: (i) => 'intensity ' + SH_EN[i].toLowerCase(), depth: (d) => (d === 'shallow' ? 'very shallow' : d + ' kilometers'), join: ', ', more: ', and others',
+    warn: 'Earthquake early warning. Strong shaking is expected. Take cover now.', where: 'Epicenter: {R}.',
+    warnMore: 'Early warning update. Strong shaking is now expected in {A}.',
+    special: 'Emergency earthquake warning. Severe shaking is expected. Protect yourself now.',
+    forecast: 'Earthquake early warning forecast. Epicenter: {R}.', fcMax: 'Maximum expected {I}.',
+    single: 'Earthquake near {R}. No intensity estimate yet.', plum: 'Shaking detected: {R}.',
+    update: 'Report {n}. Magnitude {M}, expected {I}.', updateNoI: 'Report {n}. Magnitude {M}.',
+    cancel: 'The earthquake early warning has been cancelled.',
+    count: 'Shaking arrives in {n} seconds.', arrive: 'Shaking is arriving now.',
+    flash: 'Seismic intensity report. Maximum {I}, observed in {A}.',
+    report: 'Earthquake information. Epicenter: {R}. Depth: {D}. Magnitude {M}. The maximum was {I}.',
+    epicenter: 'Hypocenter information. Epicenter: {R}. Depth: {D}. Magnitude {M}.',
+    tsuNone: 'There is no threat of a tsunami.', tsuSlight: 'Slight sea level changes are possible, but no damage is expected.', tsuOn: 'Tsunami warnings are in effect.',
+    tsu3: 'A major tsunami warning has been issued. Evacuate to high ground immediately.',
+    tsu2: 'A tsunami warning has been issued. Move away from the coast and rivers, and head to high ground.',
+    tsu1: 'A tsunami advisory has been issued. Get out of the water and away from the shore.',
+    tsu0: 'Tsunami forecast. Slight sea level changes are expected, but no damage.',
+    lp: 'Long-period ground motion information. Class {k} was observed.',
+    sample: 'Earthquake early warning. Strong shaking is expected. Take cover now.',
+  },
+  zh: {
+    I: (i) => '震度' + SH_JP[i].replace('強', '强'), depth: (d) => (d === 'shallow' ? '极浅' : d + '公里'), join: '、', more: '等地',
+    warn: '紧急地震速报。预计将有强烈摇晃，请注意防范。', where: '震源：{R}。',
+    warnMore: '紧急地震速报更新。{A}预计将有强烈摇晃，请注意防范。',
+    special: '紧急地震速报特别警报。预计将有剧烈摇晃，请立即确保自身安全。',
+    forecast: '紧急地震速报，预报。震源：{R}。', fcMax: '预计最大{I}。',
+    single: '震源：{R}。尚未推定震度。', plum: '{R}检测到摇晃。',
+    update: '第{n}报。震级{M}，预计最大{I}。', updateNoI: '第{n}报。震级{M}。',
+    cancel: '刚才的紧急地震速报已被取消。',
+    count: '距离摇晃到达还有{n}秒。', arrive: '摇晃已经到达。',
+    flash: '震度速报。在{A}观测到{I}。',
+    report: '震源与震度信息。震源：{R}，深度{D}，震级{M}。最大{I}。',
+    epicenter: '震源信息。震源：{R}，深度{D}，震级{M}。',
+    tsuNone: '此次地震不会引发海啸。', tsuSlight: '可能出现轻微海面变化，但无需担心受灾。', tsuOn: '目前已发布海啸警报等信息。',
+    tsu3: '已发布大海啸警报。请立即撤离到高地等安全地点。',
+    tsu2: '已发布海啸警报。请立即远离海岸和河流，前往高地。',
+    tsu1: '已发布海啸注意报。请立即离开海水，远离海岸。',
+    tsu0: '海啸预报。预计会有轻微海面变化，但无需担心受灾。',
+    lp: '长周期地震动观测信息。观测到{k}级长周期地震动。',
+    sample: '紧急地震速报。预计将有强烈摇晃，请注意防范。',
+  },
+  ko: {
+    I: (i) => '진도 ' + SH_JP[i].replace('弱', '약').replace('強', '강'), depth: (d) => (d === 'shallow' ? '매우 얕음' : d + '킬로미터'), join: ', ', more: ' 등',
+    warn: '긴급지진속보입니다. 강한 흔들림에 주의하십시오.', where: '진원: {R}.',
+    warnMore: '긴급지진속보. 강한 흔들림 예상 지역 추가: {A}.',
+    special: '긴급지진속보 특별경보입니다. 즉시 몸을 보호하십시오.',
+    forecast: '긴급지진속보 예보입니다. 진원: {R}.', fcMax: '예상 최대 {I}.',
+    single: '진원: {R}. 진도는 아직 추정되지 않았습니다.', plum: '흔들림 감지: {R}.',
+    update: '제{n}보. 규모 {M}, 예상 최대 {I}.', updateNoI: '제{n}보. 규모 {M}.',
+    cancel: '앞서 발표된 긴급지진속보는 취소되었습니다.',
+    count: '흔들림 도달까지 {n}초.', arrive: '흔들림이 도달했습니다.',
+    flash: '진도 속보입니다. 최대 {I}, 관측 지역: {A}.',
+    report: '지진 정보입니다. 진원: {R}. 깊이 {D}. 규모 {M}. 최대 {I}.',
+    epicenter: '진원 정보입니다. 진원: {R}. 깊이 {D}. 규모 {M}.',
+    tsuNone: '이 지진으로 인한 쓰나미 걱정은 없습니다.', tsuSlight: '약간의 해수면 변동이 있을 수 있지만 피해 걱정은 없습니다.', tsuOn: '현재 쓰나미 경보 등이 발표되어 있습니다.',
+    tsu3: '대형 쓰나미 경보가 발표되었습니다. 즉시 높은 곳으로 대피하십시오.',
+    tsu2: '쓰나미 경보가 발표되었습니다. 즉시 해안과 강가에서 벗어나 높은 곳으로 대피하십시오.',
+    tsu1: '쓰나미 주의보가 발표되었습니다. 바다에서 즉시 나와 해안에서 떨어지십시오.',
+    tsu0: '쓰나미 예보입니다. 약간의 해수면 변동이 예상되지만 피해 걱정은 없습니다.',
+    lp: '장주기 지진동 관측 정보입니다. 계급 {k}이 관측되었습니다.',
+    sample: '긴급지진속보입니다. 강한 흔들림에 주의하십시오.',
+  },
+  es: {
+    I: (i) => 'intensidad ' + shWords(i, 'inferior', 'superior'), depth: (d) => (d === 'shallow' ? 'muy superficial' : d + ' kilómetros'), join: ', ', more: ' y otras zonas',
+    warn: 'Alerta sísmica temprana. Se esperan sacudidas fuertes. Protéjase ahora.', where: 'Epicentro: {R}.',
+    warnMore: 'Actualización de la alerta. Se esperan sacudidas fuertes también en {A}.',
+    special: 'Alerta sísmica de emergencia. Se esperan sacudidas muy fuertes. Protéjase de inmediato.',
+    forecast: 'Aviso sísmico temprano. Epicentro: {R}.', fcMax: 'Máxima prevista: {I}.',
+    single: 'Epicentro: {R}. Aún no hay estimación de intensidad.', plum: 'Sacudidas detectadas: {R}.',
+    update: 'Informe {n}. Magnitud {M}, {I} prevista.', updateNoI: 'Informe {n}. Magnitud {M}.',
+    cancel: 'La alerta sísmica temprana ha sido cancelada.',
+    count: 'Las sacudidas llegan en {n} segundos.', arrive: 'Las sacudidas están llegando.',
+    flash: 'Informe de intensidad sísmica. {I}, observada en {A}.',
+    report: 'Información del sismo. Epicentro: {R}. Profundidad: {D}. Magnitud {M}. Máxima: {I}.',
+    epicenter: 'Información del hipocentro. Epicentro: {R}. Profundidad: {D}. Magnitud {M}.',
+    tsuNone: 'No hay riesgo de tsunami.', tsuSlight: 'Puede haber ligeros cambios en el nivel del mar, sin riesgo de daños.', tsuOn: 'Hay alertas de tsunami en vigor.',
+    tsu3: 'Se ha emitido una alerta de tsunami mayor. Evacúe a zonas altas de inmediato.',
+    tsu2: 'Se ha emitido una alerta de tsunami. Aléjese de la costa y de los ríos, y diríjase a zonas altas.',
+    tsu1: 'Se ha emitido un aviso de tsunami. Salga del agua y aléjese de la orilla.',
+    tsu0: 'Pronóstico de tsunami. Se esperan ligeros cambios en el nivel del mar, sin daños.',
+    lp: 'Información de movimiento de período largo. Se observó la clase {k}.',
+    sample: 'Alerta sísmica temprana. Se esperan sacudidas fuertes. Protéjase ahora.',
+  },
+  pt: {
+    I: (i) => 'intensidade ' + shWords(i, 'inferior', 'superior'), depth: (d) => (d === 'shallow' ? 'muito rasa' : d + ' quilômetros'), join: ', ', more: ' e outras áreas',
+    warn: 'Alerta antecipado de terremoto. São esperados tremores fortes. Proteja-se agora.', where: 'Epicentro: {R}.',
+    warnMore: 'Atualização do alerta. Tremores fortes também são esperados em {A}.',
+    special: 'Alerta de emergência de terremoto. São esperados tremores muito fortes. Proteja-se imediatamente.',
+    forecast: 'Aviso antecipado de terremoto. Epicentro: {R}.', fcMax: 'Máxima prevista: {I}.',
+    single: 'Epicentro: {R}. Ainda sem estimativa de intensidade.', plum: 'Tremor detectado: {R}.',
+    update: 'Boletim {n}. Magnitude {M}, {I} prevista.', updateNoI: 'Boletim {n}. Magnitude {M}.',
+    cancel: 'O alerta antecipado de terremoto foi cancelado.',
+    count: 'O tremor chega em {n} segundos.', arrive: 'O tremor está chegando.',
+    flash: 'Boletim de intensidade sísmica. {I}, observada em {A}.',
+    report: 'Informações do terremoto. Epicentro: {R}. Profundidade: {D}. Magnitude {M}. Máxima: {I}.',
+    epicenter: 'Informações do hipocentro. Epicentro: {R}. Profundidade: {D}. Magnitude {M}.',
+    tsuNone: 'Não há risco de tsunami.', tsuSlight: 'Pode haver pequenas variações no nível do mar, sem risco de danos.', tsuOn: 'Há alertas de tsunami em vigor.',
+    tsu3: 'Foi emitido um alerta de grande tsunami. Evacue imediatamente para áreas altas.',
+    tsu2: 'Foi emitido um alerta de tsunami. Afaste-se da costa e dos rios e vá para áreas altas.',
+    tsu1: 'Foi emitido um aviso de tsunami. Saia da água e afaste-se da praia.',
+    tsu0: 'Previsão de tsunami. São esperadas pequenas variações no nível do mar, sem danos.',
+    lp: 'Informação de movimento de longo período. Foi observada a classe {k}.',
+    sample: 'Alerta antecipado de terremoto. São esperados tremores fortes. Proteja-se agora.',
+  },
+  fr: {
+    I: (i) => 'intensité ' + shWords(i, 'inférieur', 'supérieur'), depth: (d) => (d === 'shallow' ? 'très superficielle' : d + ' kilomètres'), join: ', ', more: ' et ailleurs',
+    warn: 'Alerte sismique précoce. De fortes secousses sont attendues. Mettez-vous à l’abri.', where: 'Épicentre : {R}.',
+    warnMore: 'Mise à jour de l’alerte. De fortes secousses sont désormais attendues à {A}.',
+    special: 'Alerte sismique d’urgence. De très fortes secousses sont attendues. Protégez-vous immédiatement.',
+    forecast: 'Avis sismique précoce. Épicentre : {R}.', fcMax: 'Maximum prévu : {I}.',
+    single: 'Épicentre : {R}. Pas encore d’estimation d’intensité.', plum: 'Secousses détectées : {R}.',
+    update: 'Bulletin {n}. Magnitude {M}, {I} prévue.', updateNoI: 'Bulletin {n}. Magnitude {M}.',
+    cancel: 'L’alerte sismique précoce a été annulée.',
+    count: 'Les secousses arrivent dans {n} secondes.', arrive: 'Les secousses arrivent.',
+    flash: 'Bulletin d’intensité sismique. {I}, observée à {A}.',
+    report: 'Informations sur le séisme. Épicentre : {R}. Profondeur : {D}. Magnitude {M}. Maximum : {I}.',
+    epicenter: 'Informations sur l’hypocentre. Épicentre : {R}. Profondeur : {D}. Magnitude {M}.',
+    tsuNone: 'Aucun risque de tsunami.', tsuSlight: 'De légères variations du niveau de la mer sont possibles, sans risque de dégâts.', tsuOn: 'Des alertes au tsunami sont en vigueur.',
+    tsu3: 'Une alerte majeure au tsunami a été émise. Évacuez immédiatement vers les hauteurs.',
+    tsu2: 'Une alerte au tsunami a été émise. Éloignez-vous de la côte et des rivières, et rejoignez les hauteurs.',
+    tsu1: 'Un avis de tsunami a été émis. Sortez de l’eau et éloignez-vous du rivage.',
+    tsu0: 'Prévision de tsunami. De légères variations du niveau de la mer sont attendues, sans dégâts.',
+    lp: 'Information sur les mouvements de longue période. Classe {k} observée.',
+    sample: 'Alerte sismique précoce. De fortes secousses sont attendues. Mettez-vous à l’abri.',
+  },
+  de: {
+    I: (i) => 'Intensität ' + shWords(i, 'schwach', 'stark'), depth: (d) => (d === 'shallow' ? 'sehr flach' : d + ' Kilometer'), join: ', ', more: ' und weiteren Gebieten',
+    warn: 'Erdbebenfrühwarnung. Starke Erschütterungen werden erwartet. Bringen Sie sich in Sicherheit.', where: 'Epizentrum: {R}.',
+    warnMore: 'Aktualisierte Warnung. Starke Erschütterungen werden jetzt auch in {A} erwartet.',
+    special: 'Erdbeben-Notfallwarnung. Sehr starke Erschütterungen werden erwartet. Schützen Sie sich sofort.',
+    forecast: 'Erdbebenfrühwarnung, Vorhersage. Epizentrum: {R}.', fcMax: 'Erwartet: bis {I}.',
+    single: 'Epizentrum: {R}. Noch keine Intensitätsschätzung.', plum: 'Erschütterungen erkannt: {R}.',
+    update: 'Meldung {n}. Magnitude {M}, erwartet {I}.', updateNoI: 'Meldung {n}. Magnitude {M}.',
+    cancel: 'Die Erdbebenfrühwarnung wurde aufgehoben.',
+    count: 'Die Erschütterungen erreichen Sie in {n} Sekunden.', arrive: 'Die Erschütterungen treffen jetzt ein.',
+    flash: 'Meldung zur seismischen Intensität. {I}, beobachtet in {A}.',
+    report: 'Erdbebeninformation. Epizentrum: {R}. Tiefe: {D}. Magnitude {M}. Maximal {I}.',
+    epicenter: 'Information zum Erdbebenherd. Epizentrum: {R}. Tiefe: {D}. Magnitude {M}.',
+    tsuNone: 'Es besteht keine Tsunamigefahr.', tsuSlight: 'Leichte Meeresspiegelschwankungen sind möglich, Schäden sind nicht zu erwarten.', tsuOn: 'Es gelten Tsunamiwarnungen.',
+    tsu3: 'Eine große Tsunamiwarnung wurde ausgegeben. Begeben Sie sich sofort auf höher gelegenes Gelände.',
+    tsu2: 'Eine Tsunamiwarnung wurde ausgegeben. Entfernen Sie sich von der Küste und von Flüssen und suchen Sie höheres Gelände auf.',
+    tsu1: 'Ein Tsunamihinweis wurde ausgegeben. Verlassen Sie das Wasser und entfernen Sie sich vom Ufer.',
+    tsu0: 'Tsunamivorhersage. Leichte Meeresspiegelschwankungen werden erwartet, ohne Schäden.',
+    lp: 'Information zu langperiodischen Bodenbewegungen. Klasse {k} wurde beobachtet.',
+    sample: 'Erdbebenfrühwarnung. Starke Erschütterungen werden erwartet. Bringen Sie sich in Sicherheit.',
+  },
+  it: {
+    I: (i) => 'intensità ' + shWords(i, 'inferiore', 'superiore'), depth: (d) => (d === 'shallow' ? 'molto superficiale' : d + ' chilometri'), join: ', ', more: ' e altre zone',
+    warn: 'Allerta sismica precoce. Sono attese forti scosse. Mettetevi al riparo.', where: 'Epicentro: {R}.',
+    warnMore: 'Aggiornamento dell’allerta. Forti scosse sono ora attese anche a {A}.',
+    special: 'Allerta sismica di emergenza. Sono attese scosse molto forti. Proteggetevi subito.',
+    forecast: 'Avviso sismico precoce. Epicentro: {R}.', fcMax: 'Massima prevista: {I}.',
+    single: 'Epicentro: {R}. Nessuna stima dell’intensità per ora.', plum: 'Scosse rilevate: {R}.',
+    update: 'Bollettino {n}. Magnitudo {M}, {I} prevista.', updateNoI: 'Bollettino {n}. Magnitudo {M}.',
+    cancel: 'L’allerta sismica precoce è stata annullata.',
+    count: 'Le scosse arrivano tra {n} secondi.', arrive: 'Le scosse stanno arrivando.',
+    flash: 'Bollettino di intensità sismica. {I}, osservata a {A}.',
+    report: 'Informazioni sul terremoto. Epicentro: {R}. Profondità: {D}. Magnitudo {M}. Massima: {I}.',
+    epicenter: 'Informazioni sull’ipocentro. Epicentro: {R}. Profondità: {D}. Magnitudo {M}.',
+    tsuNone: 'Non c’è pericolo di tsunami.', tsuSlight: 'Sono possibili lievi variazioni del livello del mare, senza danni.', tsuOn: 'Sono in vigore allerte tsunami.',
+    tsu3: 'È stata emessa un’allerta tsunami grave. Evacuate subito verso zone elevate.',
+    tsu2: 'È stata emessa un’allerta tsunami. Allontanatevi dalla costa e dai fiumi e raggiungete zone elevate.',
+    tsu1: 'È stato emesso un avviso di tsunami. Uscite dall’acqua e allontanatevi dalla riva.',
+    tsu0: 'Previsione tsunami. Sono attese lievi variazioni del livello del mare, senza danni.',
+    lp: 'Informazioni sul moto del suolo a lungo periodo. Osservata la classe {k}.',
+    sample: 'Allerta sismica precoce. Sono attese forti scosse. Mettetevi al riparo.',
+  },
+  ru: {
+    I: (i) => 'интенсивность ' + shWords(i, 'минус', 'плюс'), depth: (d) => (d === 'shallow' ? 'очень малая' : d + ' км'), join: ', ', more: ' и других районах',
+    warn: 'Раннее предупреждение о землетрясении. Ожидаются сильные толчки. Немедленно укройтесь.', where: 'Эпицентр: {R}.',
+    warnMore: 'Обновление предупреждения. Сильные толчки ожидаются также: {A}.',
+    special: 'Экстренное предупреждение о землетрясении. Ожидаются очень сильные толчки. Немедленно защитите себя.',
+    forecast: 'Раннее оповещение о землетрясении. Эпицентр: {R}.', fcMax: 'Ожидается {I}.',
+    single: 'Эпицентр: {R}. Оценки интенсивности пока нет.', plum: 'Обнаружены толчки: {R}.',
+    update: 'Сообщение {n}. Магнитуда {M}, ожидается {I}.', updateNoI: 'Сообщение {n}. Магнитуда {M}.',
+    cancel: 'Раннее предупреждение о землетрясении отменено.',
+    count: 'Толчки дойдут через {n} секунд.', arrive: 'Толчки начинаются.',
+    flash: 'Сводка сейсмической интенсивности. {I} наблюдалась: {A}.',
+    report: 'Информация о землетрясении. Эпицентр: {R}. Глубина: {D}. Магнитуда {M}. Максимум: {I}.',
+    epicenter: 'Информация о гипоцентре. Эпицентр: {R}. Глубина: {D}. Магнитуда {M}.',
+    tsuNone: 'Угрозы цунами нет.', tsuSlight: 'Возможны небольшие колебания уровня моря, ущерба не ожидается.', tsuOn: 'Действуют предупреждения о цунами.',
+    tsu3: 'Объявлено предупреждение о крупном цунами. Немедленно эвакуируйтесь на возвышенность.',
+    tsu2: 'Объявлено предупреждение о цунами. Уйдите от побережья и рек и поднимитесь на возвышенность.',
+    tsu1: 'Объявлено уведомление о цунами. Выйдите из воды и отойдите от берега.',
+    tsu0: 'Прогноз цунами. Ожидаются небольшие колебания уровня моря без ущерба.',
+    lp: 'Информация о длиннопериодных колебаниях. Зарегистрирован класс {k}.',
+    sample: 'Раннее предупреждение о землетрясении. Ожидаются сильные толчки. Немедленно укройтесь.',
+  },
+};
+// "5 Lower" style levels for the languages that spell them out
+function shWords(i, lo, hi) {
+  const s = SH_JP[i];
+  return s.replace('弱', ' ' + lo).replace('強', ' ' + hi);
+}
+// Chinese reads Japanese place names by their characters: swap the Japanese-only forms for simplified ones
+const ZH_MAP = { 県: '县', 島: '岛', 関: '关', 東: '东', 広: '广', 児: '儿', 長: '长', 岡: '冈', 愛: '爱', 馬: '马', 宮: '宫', 葉: '叶', 潟: '泻', 賀: '贺', 庫: '库',
+  鳥: '鸟', 徳: '德', 縄: '绳', 総: '总', 豊: '丰', 陸: '陆', 気: '气', 浜: '滨', 灘: '滩', 鳴: '鸣', 門: '门', 釧: '钏', 紀: '纪', 諸: '诸', 対: '对', 壱: '壹',
+  沢: '泽', 讃: '赞', 隠: '隐', 頭: '头', 遠: '远', 栃: '枥', 飛: '飞', 輪: '轮', 帯: '带', 沖: '冲', 黒: '黑', 歳: '岁', 達: '达', 鉄: '铁', 巻: '卷', 戸: '户', 圏: '圈' };
+const KANA_RE = /[぀-ヿ]/;
+const HANGUL_RE = /[가-힯]/, CYR_RE = /[Ѐ-ӿ]/;
+// a best guess at what language some typed text is in (the voice's own language when it fits)
+function textLang(t, lang) {
+  if (KANA_RE.test(t)) return 'ja';
+  if (HANGUL_RE.test(t)) return 'ko';
+  if (CYR_RE.test(t)) return 'ru';
+  if (hasCJK(t)) return lang === 'zh' || lang === 'ja' ? lang : 'ja';
+  return lang === 'ja' || lang === 'zh' || lang === 'ko' || lang === 'ru' ? 'en' : lang;
+}
+// a place name in the voice's language
+function voicePlace(lang, ja, en) {
+  if (lang === 'ja') return ja || en || '';
+  if (lang === 'zh' && ja && !KANA_RE.test(ja)) return [...ja].map((ch) => ZH_MAP[ch] || ch).join('');
+  return en || ja || '';
+}
+// sentences side by side: Japanese and Chinese run them together, the rest put a space between
+function vcat(lang, ...parts) { return parts.filter(Boolean).join(lang === 'ja' || lang === 'zh' ? '' : ' '); }
+function voiceFill(tpl, vars) { return String(tpl || '').replace(/\{(\w)\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : '')); }
+function voiceLangOf(prefs) {
+  const v = (prefs && prefs.voice) || {};
+  if (v.lang && v.lang !== 'auto' && VOICE_LANGS[v.lang]) return v.lang;
+  return prefs && prefs.lang === 'en' ? 'en' : 'ja';
+}
+const voiceNum = (lang, x) => (VOICE_LANGS[lang].dec === ',' ? String(x).replace('.', ',') : String(x));
+// the voice's name for a parent area (prefecture or state)
+function voiceParent(DB, lang, p) { const P = DB.parents[p]; return voicePlace(lang, P.c === 'JP' ? P.ja : '', P.en); }
+function voiceAreas(lang, names) {
+  const L = VOICE_TEXT[lang], list = names.slice(0, 4);
+  return list.join(L.join) + (names.length > 4 ? L.more : '');
+}
+
+// what a box would say by itself ('' when it says nothing)
+function voiceAutoFor(world, it, lang) {
+  const L = VOICE_TEXT[lang], DB = world.DB;
+  const ee = it.ev && it.ev !== 'auto' ? world.evMap.get(it.ev) : world.main;
+  const E = ee || world.main;
+  if (!E) return '';
+  const jp = E.ph.country === 'JP';
+  const region = voicePlace(lang, E.name.ja, E.name.en);
+  const M = () => voiceNum(lang, (it.data.M !== null && it.data.M !== undefined && it.data.M !== '' && isFinite(+it.data.M) ? +it.data.M : E.ph.M).toFixed(1));
+  const D = () => { const d = it.data.depth; const v = d === 'shallow' ? 0 : d !== null && d !== undefined && d !== '' && isFinite(+d) ? +d : E.ph.depth; return L.depth(v < 5 ? 'shallow' : Math.round(v)); };
+  const tsuLine = () => { if (!jp) return ''; const m = tsunamiMaxForEvent({ world }, E); return m >= 1 ? L.tsuOn : m === 0 ? L.tsuSlight : L.tsuNone; };
+  switch (it.type) {
+    case 'flash': {
+      flashRows({ world }, E);
+      const rows = E.ph._flashRows || [];
+      if (!rows.length) return '';
+      const cap = it.data.cap !== null && it.data.cap !== undefined && it.data.cap !== '' && isFinite(+it.data.cap) ? +it.data.cap : 99;
+      const top = Math.min(rows[0].idx, cap);
+      const ps = rows.filter((r) => Math.min(r.idx, cap) === top).flatMap((r) => r.ps);
+      return voiceFill(L.flash, { I: L.I(top), A: voiceAreas(lang, ps.map((p) => voiceParent(DB, lang, p))) });
+    }
+    case 'report': {
+      const mo = it.data.maxOverride;
+      const mi = mo !== null && mo !== undefined && mo !== '' && isFinite(+mo) ? +mo : shIdx(E.ph.maxObs);
+      if (mi < 0) return '';
+      return vcat(lang, voiceFill(L.report, { R: region, D: D(), M: M(), I: L.I(mi) }), tsuLine());
+    }
+    case 'epicenter': return vcat(lang, voiceFill(L.epicenter, { R: region, D: D(), M: M() }), tsuLine());
+    case 'tsunami': {
+      const m = tsunamiLevelsFor({ world }, it, E).max;
+      return m >= 3 ? L.tsu3 : m === 2 ? L.tsu2 : m === 1 ? L.tsu1 : m === 0 ? L.tsu0 : '';
+    }
+    case 'longperiod': { const k = longPeriodFor(DB, E.ph).max; return k >= 1 ? voiceFill(L.lp, { k }) : ''; }
+    case 'custom': {
+      const d = it.data, t = String(d.title || '').split(/\s*[|｜]\s*/)[0], s = String(d.sub || '').trim();
+      return [t, s].filter(Boolean).join(hasCJK(t) ? '。' : '. ');
+    }
+    default: return '';
+  }
+}
+// which Settings switch covers a box type
+const VOICE_BOX_KEY = { flash: 'flash', report: 'report', epicenter: 'report', tsunami: 'tsunami', longperiod: 'longperiod', custom: 'custom' };
+
+// every line the timeline speaks: { t, text, lang, late } (late: how many seconds behind it may still start)
+function voiceLines(world, prefs) {
+  const V = { ...VOICE_DEFAULT, ...((prefs && prefs.voice) || {}) };
+  if (!V.on || !world) return [];
+  const lang = voiceLangOf(prefs), L = VOICE_TEXT[lang], out = [], dl = clamp(+V.delay || 0, 0, 5);
+  const add = (t, text, late = 8, own = false) => {
+    if (!text || !String(text).trim()) return;
+    // words someone typed are read in the language they're written in, as far as that can be told
+    const tl = own ? textLang(String(text), lang) : lang;
+    out.push({ t: +t.toFixed(2), text: String(text).trim(), lang: tl, late });
+  };
+  for (const E of world.evs) {
+    const region = voicePlace(lang, E.name.ja, E.name.en);
+    let special = false, saidWarn = false, lastEew = null;
+    const seen = new Float32Array(world.DB.parents.length).fill(-9);
+    // a new EEW line within a few seconds of the last one for the same quake replaces it (the first report, a
+    // warning and the emergency warning often land 1 or 2 seconds apart; saying all three would just pile up)
+    const eewLine = (t, text) => {
+      if (lastEew && t - lastEew.t < 5 && out.includes(lastEew)) out.splice(out.indexOf(lastEew), 1);
+      add(t, text);
+      lastEew = out[out.length - 1];
+    };
+    E.reports.forEach((r, k) => {
+      if (r.kind === 'cancel') { if (V.cancel) add(r.t + dl, L.cancel); return; }
+      const pr = reportPred(world, E, r), mi = pr ? pr.maxIdx : -1;
+      const best = pr ? parentBest(world.DB, E, pr) : null;
+      // where strong shaking (5 Lower and up) is newly expected
+      let fresh = best ? [...best.keys()].filter((p) => best[p] >= 4.5 && seen[p] < 3.5) : [];
+      if (!fresh.length && best) fresh = [...best.keys()].filter((p) => best[p] >= 4.5 && seen[p] < 4.5);
+      fresh.sort((a, b) => best[b] - best[a]);
+      if (best) best.forEach((v, p) => { if (v > seen[p]) seen[p] = v; });
+      if (!V.eew) { if (V.update && k > 0 && !r.assumed) add(r.t + dl, voiceFill(mi >= 0 ? L.update : L.updateNoI, { n: r._n || k + 1, M: voiceNum(lang, r.M.toFixed(1)), I: mi >= 0 ? L.I(mi) : '' }), 3); return; }
+      if (r.kind === 'warning' && mi >= 6 && !special) { special = true; saidWarn = true; eewLine(r.t + dl, vcat(lang, L.special, voiceFill(L.where, { R: region }))); return; }
+      if (r.kind === 'warning' && !saidWarn) { saidWarn = true; eewLine(r.t + dl, vcat(lang, L.warn, voiceFill(L.where, { R: region }))); return; }
+      if (r.kind === 'warning' && (r._issue || r._firstWarn)) {
+        // a follow-up warning: name where it's newly expected, or say it again
+        if (fresh.length) add(r.t + dl, voiceFill(L.warnMore, { A: voiceAreas(lang, fresh.map((p) => voiceParent(world.DB, lang, p))) }));
+        else add(r.t + dl, vcat(lang, L.warn, voiceFill(L.where, { R: region })));
+        return;
+      }
+      if (k === 0) {
+        if (r.assumed) eewLine(r.t + dl, voiceFill(L.plum, { R: region }));
+        else if (r.single) eewLine(r.t + dl, voiceFill(L.single, { R: region }));
+        else eewLine(r.t + dl, vcat(lang, voiceFill(L.forecast, { R: region }), mi >= 0 ? voiceFill(L.fcMax, { I: L.I(mi) }) : ''));
+        return;
+      }
+      if (V.update && !r.assumed) add(r.t + dl, voiceFill(mi >= 0 ? L.update : L.updateNoI, { n: r._n || k + 1, M: voiceNum(lang, r.M.toFixed(1)), I: mi >= 0 ? L.I(mi) : '' }), 3);
+    });
+    // the countdown at your location
+    if (V.countdown && world.my && E.ph.shaking && E.reports.length) {
+      const rr = world.my.resp[world.evs.indexOf(E)];
+      if (rr && rr.Ipk >= 0.5) {
+        const ta = E.ev.t0 + rr.tS, first = E.reports[0].t;
+        if (ta - 10 >= first + 4) add(ta - 10, voiceFill(L.count, { n: 10 }), 1);
+        if (ta > first) add(ta, L.arrive, 1.5);
+      }
+    }
+  }
+  for (const it of world.items) {
+    const key = VOICE_BOX_KEY[it.type];
+    if (!key || it.hidden) continue;
+    const say = typeof it.data.say === 'string' ? it.data.say.trim() : '';
+    if (say === '-') continue;
+    if (say) { add(it.t0 + dl, say, 8, true); continue; }
+    if (!V[key]) continue;
+    add(it.t0 + dl, voiceAutoFor(world, it, lang), 8, it.type === 'custom');
+  }
+  for (const c of world.doc.cues || []) {
+    if (!c.say || !String(c.say).trim()) continue;
+    const cl = c.lang && VOICE_LANGS[c.lang] ? c.lang : textLang(String(c.say), lang);
+    out.push({ t: c.t, text: String(c.say).trim(), lang: cl, late: 8 });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// ---------------------------------------------------------------- fetching and playing
+const VOICE = {
+  clips: new Map(), // key -> { buf, p, err }
+  remote: 'unknown', // 'ok' | 'blocked' | 'unknown'
+  busy: 0, played: 0, said: 0, blockedAt: 0,
+  dec: null,
+};
+// the service didn't answer: don't keep asking for a minute (then try again, in case it was a blip)
+function voiceBlocked() { return VOICE.remote === 'blocked' && Date.now() - (VOICE.blockedAt || 0) < 60000; }
+function voiceGender(prefs, lang) {
+  const kind = VOICE_KINDS[((prefs && prefs.voice) || {}).voice] || VOICE_KINDS.alto;
+  const single = VOICE_LANGS[lang].single;
+  return { g: single ? 'female' : kind.g, rate: single && kind.single ? kind.single : kind.rate };
+}
+// Scratch takes up to 128 characters; longer lines go in sentence-sized pieces
+function voiceSplit(text) {
+  const out = [];
+  const parts = String(text).match(/[^。．.!?！？]+[。．.!?！？]?/g) || [String(text)];
+  for (let p of parts) {
+    p = p.trim();
+    if (!p) continue;
+    while (p.length > 128) {
+      let cut = Math.max(p.lastIndexOf('、', 128), p.lastIndexOf(',', 128), p.lastIndexOf('，', 128), p.lastIndexOf(' ', 128));
+      if (cut < 40) cut = 128;
+      out.push(p.slice(0, cut + 1).trim()); p = p.slice(cut + 1).trim();
+    }
+    if (p) {
+      // tiny pieces ride along with the one before
+      if (out.length && (out[out.length - 1] + ' ' + p).length <= 128 && p.length < 24) out[out.length - 1] += (hasCJK(p) ? '' : ' ') + p;
+      else out.push(p);
+    }
+  }
+  return out;
+}
+const voiceUrl = (text, loc, g) => `${VOICE_HOST}/synth?locale=${loc}&gender=${g}&text=${encodeURIComponent(text.slice(0, 128))}`;
+function voiceDecoder() {
+  if (AU.ctx && !(typeof OfflineAudioContext !== 'undefined' && AU.ctx instanceof OfflineAudioContext)) return AU.ctx;
+  if (!VOICE.dec) { const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext; VOICE.dec = OC ? new OC(1, 1, 48000) : null; }
+  return VOICE.dec;
+}
+// one piece of audio from Scratch (or this browser's cache of it)
+function voiceClip(text, loc, g) {
+  const key = loc + '|' + g + '|' + text;
+  const have = VOICE.clips.get(key);
+  if (have && (have.buf || have.p)) return have.p || Promise.resolve(have.buf);
+  const url = voiceUrl(text, loc, g);
+  const ent = { buf: null, p: null, err: null };
+  VOICE.busy++;
+  ent.p = (async () => {
+    let raw = null;
+    let cache = null;
+    try { cache = window.caches ? await caches.open('quaker-voice-1') : null; } catch (e) { cache = null; }
+    if (cache) { try { const hit = await cache.match(url); if (hit) raw = await hit.arrayBuffer(); } catch (e) { /* no cache here */ } }
+    if (!raw) {
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const tm = setTimeout(() => ctl && ctl.abort(), 12000);
+      let res;
+      try { res = await fetch(url, ctl ? { signal: ctl.signal } : undefined); } finally { clearTimeout(tm); }
+      if (!res.ok) throw new Error('voice ' + res.status);
+      const blob = await res.blob();
+      raw = await blob.arrayBuffer();
+      if (cache) { try { await cache.put(url, new Response(blob, { headers: { 'Content-Type': blob.type || 'audio/mpeg' } })); } catch (e) { /* full or not allowed */ } }
+      VOICE.remote = 'ok';
+    }
+    const dc = voiceDecoder();
+    if (!dc) throw new Error('no audio');
+    const buf = await new Promise((ok, bad) => { const p = dc.decodeAudioData(raw, ok, bad); if (p && p.then) p.then(ok, bad); });
+    ent.buf = buf; ent.p = null;
+    return buf;
+  })().catch((e) => {
+    ent.err = e; ent.p = null; VOICE.clips.delete(key);
+    if (VOICE.remote !== 'ok') { VOICE.remote = 'blocked'; VOICE.blockedAt = Date.now(); }
+    throw e;
+  }).finally(() => { VOICE.busy--; voiceStatusChanged(); });
+  VOICE.clips.set(key, ent);
+  return ent.p;
+}
+function voicePieces(line, prefs) {
+  const L = VOICE_LANGS[line.lang] || VOICE_LANGS.en, vg = voiceGender(prefs, line.lang);
+  return { loc: L.loc, g: vg.g, rate: vg.rate, parts: voiceSplit(line.text) };
+}
+// fetch what a timeline will say ahead of time, a couple at a time
+let voiceQ = [], voiceRunning = 0;
+function voicePrefetch(lines, prefs) {
+  if (!lines || !lines.length || voiceBlocked()) return;
+  const seen = new Set();
+  voiceQ = [];
+  for (const ln of lines) {
+    const v = voicePieces(ln, prefs);
+    for (const t of v.parts) { const k = v.loc + '|' + v.g + '|' + t; if (!seen.has(k) && !(VOICE.clips.get(k) || {}).buf) { seen.add(k); voiceQ.push([t, v.loc, v.g]); } }
+  }
+  const pump = () => {
+    while (voiceRunning < 2 && voiceQ.length && !voiceBlocked()) {
+      const [t, loc, g] = voiceQ.shift();
+      voiceRunning++;
+      voiceClip(t, loc, g).catch(() => {}).finally(() => { voiceRunning--; pump(); });
+    }
+  };
+  pump();
+}
+let voicePfTimer = 0;
+function voicePrefetchSoon(lines, prefs) {
+  clearTimeout(voicePfTimer);
+  if (!lines || !lines.length) return;
+  voicePfTimer = setTimeout(() => voicePrefetch(lines, prefs), 1200);
+}
+// everything a video needs, before its sound is mixed; returns how many lines couldn't be fetched
+async function voiceReady(lines, prefs, onProgress) {
+  let missing = 0, done = 0;
+  const jobs = [];
+  for (const ln of lines) { const v = voicePieces(ln, prefs); for (const t of v.parts) jobs.push([t, v.loc, v.g]); }
+  for (let i = 0; i < jobs.length; i += 3) {
+    await Promise.all(jobs.slice(i, i + 3).map(([t, loc, g]) => voiceClip(t, loc, g).catch(() => { missing++; })));
+    done = Math.min(jobs.length, i + 3);
+    if (onProgress) onProgress(done / jobs.length);
+    if (voiceBlocked()) { missing += jobs.length - done; break; }
+  }
+  return missing;
+}
+// speak one line now (live) or at the mix position (export). Lines queue up behind each other instead of
+// talking over one another, and a line that would start too late is dropped.
+function voiceSay(line, prefs) {
+  if (!AU.ctx || !AU.on) return;
+  const V = { ...VOICE_DEFAULT, ...((prefs && prefs.voice) || {}) };
+  const v = voicePieces(line, prefs);
+  const bufs = v.parts.map((t) => (VOICE.clips.get(v.loc + '|' + v.g + '|' + t) || {}).buf);
+  const offline = !!AU.offline;
+  if (bufs.every(Boolean)) { AU.playVoice(bufs, v.rate, V.vol, line.late); VOICE.played++; return; }
+  if (offline) return;
+  // not here yet: fetch it and play if it's still in time, or use this device's voice
+  const want = AU.ctx.currentTime;
+  if (!voiceBlocked()) {
+    Promise.all(v.parts.map((t) => voiceClip(t, v.loc, v.g))).then((bs) => {
+      if (AU.ctx && AU.ctx.currentTime - want <= line.late) { AU.playVoice(bs, v.rate, V.vol, line.late - (AU.ctx.currentTime - want)); VOICE.played++; }
+    }).catch(() => voiceDevice(line, V));
+  } else voiceDevice(line, V);
+}
+// this device's own text to speech: live only
+function voiceDevice(line, V) {
+  try {
+    if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
+    const u = new SpeechSynthesisUtterance(line.text);
+    u.lang = (VOICE_LANGS[line.lang] || VOICE_LANGS.en).loc.replace('cmn-CN', 'zh-CN');
+    u.volume = clamp(V.vol * (AU.vol || 1), 0, 1);
+    const kind = VOICE_KINDS[V.voice] || VOICE_KINDS.alto;
+    u.pitch = clamp(kind.rate, 0.5, 2); u.rate = 1;
+    speechSynthesis.speak(u);
+    VOICE.said++;
+  } catch (e) { /* no voice here */ }
+}
+let voiceStatusTimer = 0;
+function voiceStatusChanged() {
+  clearTimeout(voiceStatusTimer);
+  voiceStatusTimer = setTimeout(() => { const el = document.getElementById('voiceStatus'); if (el) el.textContent = voiceStatusText(); }, 150);
+}
+function voiceStatusText() {
+  if (voiceBlocked()) return 'Can’t reach Scratch’s voice service from here, so this device’s own voice reads the lines while it plays. Videos won’t have them.';
+  if (VOICE.busy) return `Fetching ${VOICE.busy} line${VOICE.busy > 1 ? 's' : ''}…`;
+  if (VOICE.remote === 'ok') return 'Ready. Lines are kept in this browser after the first time.';
+  return 'Lines are fetched from Scratch’s voice service the first time they’re needed, then kept in this browser.';
+}
+// read something out now (Settings and editor previews)
+function voicePreview(text, lang) {
+  if (!text) { toast('Nothing to say here.', 1600); return; }
+  AU.ensure();
+  AU.vEnd = 0;
+  voiceSay({ t: 0, text, lang: lang || textLang(text, voiceLangOf(S.eff)), late: 30 }, S.eff);
 }
 
 // ============================================================== Quaker v2 · stage fonts
@@ -7196,7 +7797,7 @@ function edRender() {
     if (!d.cues.length) lane.append(h('div', { class: 'tl-empty', style: 'left:8px', text: `${dblWord()} here to play a sound at that moment.` }));
     for (const cu of d.cues) {
       const sel = isSel('cue', cu.id);
-      lane.append(h('div', { class: 'tl-mk dark' + (sel ? ' sel' : ''), 'data-k': 'cue:' + cu.id, style: `left:${tx(cu.t)}px;--c:#2DB8A0`, title: `${AU.label(cu.sound)} · ${fmtT(cu.t)}`, text: '♪' }));
+      lane.append(h('div', { class: 'tl-mk dark' + (sel ? ' sel' : ''), 'data-k': 'cue:' + cu.id, style: `left:${tx(cu.t)}px;--c:#2DB8A0`, title: `${AU.label(cu.sound)}${cu.say ? ' · “' + cu.say.slice(0, 60) + '”' : ''} · ${fmtT(cu.t)}`, text: cu.say ? '“' : '♪' }));
     }
     inner.append(row);
   }
@@ -8206,6 +8807,15 @@ function inspItem(it) {
     h('div', { class: 'row' },
       btn('▶ Preview', () => { AU.ensure(); if (it.sound === 'default' || !AU.has(it.sound)) { const sl = T.slot; if (sl) AU.playSlot(sl); } else AU.play(it.sound); }),
       btn('Import a sound…', () => pickSoundFile((id) => edEdit(() => { it.sound = id; }, { structural: true }))))));
+  // what it says out loud
+  if (VOICE_BOX_KEY[it.type]) {
+    const lang = voiceLangOf(S.eff), wi = S.world && S.world.items.find((x) => x.id === it.id);
+    const auto = wi ? voiceAutoFor(S.world, wi, lang) : '';
+    out.push(fg('Voice',
+      fRow('Says', cText(() => D.say || '', (v) => edEdit(() => { D.say = v; }, { coalesce: it.id + 'say', structural: true }), { ph: auto ? auto.slice(0, 120) : 'Nothing by itself' }),
+        'Empty reads it out by itself (Settings → Sounds → Voice). Type your own words, or a single - to keep it quiet.'),
+      h('div', { class: 'row' }, btn('▶ Say it', () => { const t = (D.say || '').trim(); voicePreview(t && t !== '-' ? t : auto, t && t !== '-' ? null : lang); }))));
+  }
   const content = inspContent(it, D, set);
   if (content) out.push(content);
   out.push(h('div', { class: 'row' },
@@ -8478,7 +9088,11 @@ function inspCue(cu) {
       fRow('Sound', soundSel(() => cu.sound, set('sound', { structural: true }), false)),
       fRow('Volume', cRange(() => cu.vol, set('vol'), { min: 0, max: 2, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })),
       h('p', { class: 'note', text: 'Import your own audio here, or write note patterns in Settings → Sounds.' })),
-    h('div', { class: 'row' }, btn('▶ Preview', () => { AU.ensure(); AU.play(cu.sound, cu.vol); }),
+    fg('Voice',
+      fRow('Say', cText(() => cu.say || '', set('say', { structural: true }), { ph: 'Words to read out at this moment' })),
+      fRow('Language', cSel(() => cu.lang || 'auto', set('lang', { structural: true }), [['auto', 'Whatever it’s written in'], ...Object.entries(VOICE_LANGS).map(([k, L]) => [k, L.name])])),
+      h('p', { class: 'note', text: 'Read by the same voice as the alerts (Settings → Sounds → Voice). Set the sound above to Silent for just the words.' })),
+    h('div', { class: 'row' }, btn('▶ Preview', () => { AU.ensure(); AU.play(cu.sound, cu.vol); if (cu.say && cu.say.trim()) voicePreview(cu.say.trim(), cu.lang && cu.lang !== 'auto' ? cu.lang : null); }),
       btn('Import a sound…', () => pickSoundFile((id) => edEdit(() => { cu.sound = id; }, { structural: true }))),
       btn('Duplicate', edDuplicateSel), h('span', { style: 'flex:1' }), btn('Delete', edDeleteSel, 'btn sm danger'))];
 }
@@ -9579,6 +10193,7 @@ const PREFS_DEFAULT = {
   fx: { shake: 0.6, vignette: true, reveal: true, shadows: true },
   clock: { h12: false },
   sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'issue', fcMix: 'replace', fcV: 2 },
+  voice: { ...VOICE_DEFAULT },
   rec: { res: 1080, fps: 30, sound: true },
   cam: { ...CAM_DEFAULT },
   fonts: { jp: '', ui: '', num: '', jpScale: 1, uiScale: 1, numScale: 1 },
@@ -10066,6 +10681,7 @@ function setFollow(on) {
 }
 function fireSounds(prev, cur) {
   if (S.speed > 4) return;
+  for (const ln of S.world.voice || []) if (ln.t > prev && ln.t <= cur) voiceSay(ln, S.eff);
   for (const s of S.world.sounds) {
     if (s.t <= prev || s.t > cur) continue;
     if (s.sound) {
@@ -11237,6 +11853,28 @@ function buildSoundSettings() {
       for (const [slot] of LEVEL_SLOTS) { P.sound.slots[slot] = SOUND_DEFAULTS[slot]; delete P.sound.slotVol[slot]; }
       prefsChanged(); buildSoundSettings(); toast('Shindo sounds reset.', 1600);
     }, 'btn sm ghost')));
+  // voice
+  root.append(h('h3', { class: 'set-h', text: 'Voice' }));
+  const V = P.voice;
+  const vset = (k, after) => (v) => { V[k] = v; prefsChanged(); if (after) after(); };
+  root.append(h('div', { class: 'row' },
+    cChk(() => V.on, vset('on', () => buildSoundSettings()), 'Read the alerts out loud'),
+    h('span', { style: 'flex:1' }),
+    fRow('Language', cSel(() => V.lang || 'auto', vset('lang'), [['auto', 'Same as the on-screen text'], ...Object.entries(VOICE_LANGS).map(([k, L]) => [k, L.name])])),
+    fRow('Voice', cSel(() => V.voice || 'alto', vset('voice'), Object.entries(VOICE_KINDS).map(([k, K]) => [k, K.label])))));
+  const vb = h('div', { class: 'grid' + (V.on ? '' : ' off') },
+    fRow('Volume', cRange(() => V.vol ?? 1, vset('vol'), { min: 0, max: 2, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })),
+    fRow('Start after the chime', cRange(() => V.delay ?? 1.2, vset('delay'), { min: 0, max: 4, step: 0.1, fmt: (v) => v.toFixed(1) + ' s' })));
+  root.append(vb);
+  const pick = [['eew', 'EEW: first report, warnings, the emergency warning'], ['update', 'Every EEW update (magnitude and forecast)'], ['cancel', 'EEW cancelled'],
+    ['countdown', 'Countdown at your location (10 seconds, arriving)'], ['flash', 'Intensity flash'], ['report', 'Hypocenter and intensity reports'],
+    ['tsunami', 'Tsunami warnings'], ['longperiod', 'Long-period ground motion'], ['custom', 'Custom alert boxes (their title)']];
+  const vg = h('div', { class: 'vchecks' + (V.on ? '' : ' off') }, ...pick.map(([k, label]) => cChk(() => !!V[k], vset(k), label)));
+  root.append(vg);
+  root.append(h('div', { class: 'row' },
+    btn('▶ Test the voice', () => { const lang = voiceLangOf(S.eff); voicePreview(VOICE_TEXT[lang].sample, lang); }),
+    h('span', { id: 'voiceStatus', class: 'note', style: 'flex:1;margin:0', text: voiceStatusText() })));
+  root.append(h('p', { class: 'note', text: 'The voices are Scratch’s Text to Speech ones (Amazon Polly, through Scratch’s free voice service). Each line is fetched the first time it’s needed and kept in this browser, and exported videos include them. Any box or sound cue in Advanced can say its own words instead.' }));
   // files
   const files = h('div', { class: 'list' });
   for (const f of AU.files) {
@@ -11443,7 +12081,7 @@ async function boot() {
   needRender = true;
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
-    S, R, AU, REC, ED, EXP,
+    S, R, AU, REC, ED, EXP, VOICE,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, scene: (t) => sceneAt(S.world, t ?? S.tau, S.prefs), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
@@ -11536,7 +12174,7 @@ const rumbleLevel = (tau) => (S.world.my ? Math.pow(clamp((myIntensity(S.world, 
 async function exportAudio(plan, fps, onProgress) {
   const sr = 48000, len = Math.max(1, Math.ceil(plan.total * sr));
   const oc = new OfflineAudioContext(2, len, sr);
-  const saved = { ctx: AU.ctx, master: AU.master, out: AU.out, rumbleGain: AU.rumbleGain, offAt: AU.offAt };
+  const saved = { ctx: AU.ctx, master: AU.master, out: AU.out, rumbleGain: AU.rumbleGain, offAt: AU.offAt, offline: AU.offline, vEnd: AU.vEnd };
   try {
     const master = oc.createGain(); master.gain.value = AU.on ? AU.vol : 0;
     const comp = oc.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 4;
@@ -11548,7 +12186,7 @@ async function exportAudio(plan, fps, onProgress) {
     const lp = oc.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140;
     const rg = oc.createGain(); rg.gain.value = 0;
     src.connect(lp); lp.connect(rg); rg.connect(master); src.start(0);
-    Object.assign(AU, { ctx: oc, master, out: comp, rumbleGain: rg });
+    Object.assign(AU, { ctx: oc, master, out: comp, rumbleGain: rg, offline: true, vEnd: 0 });
     // walk the timeline frame by frame, firing what playback would fire
     if (plan.introDur > 0) { AU.offAt = 0; AU.playSlot('intro'); }
     const n = Math.round(plan.total * fps);
@@ -11597,7 +12235,7 @@ async function exportVideo() {
   badge('0%');
   const keep = { state: S.state, tau: S.tau, intro: S.intro, staleMs: R.staleMs, K: R.K };
   const plan = exportPlan();
-  let fail = null, blob = null, silent = false;
+  let fail = null, blob = null, silent = false, voiceMissing = 0;
   try {
     // sound first (quick), then the pictures
     const muxer = new Mp4Muxer.Muxer({
@@ -11608,6 +12246,12 @@ async function exportVideo() {
       firstTimestampBehavior: 'offset',
     });
     if (acfg) {
+      // the spoken lines have to be here before the sound is mixed
+      const vl = S.world.voice || [];
+      if (vl.length && plan.speed <= 4) {
+        badge('voice…');
+        voiceMissing = await voiceReady(vl, S.eff, (f) => badge('voice ' + Math.round(f * 100) + '%'));
+      }
       badge('sound…');
       const buf = await exportAudio(plan, fps, () => {});
       let firstA = true;
@@ -11628,7 +12272,9 @@ async function exportVideo() {
       ae.close();
     }
     // pictures: same start as playback (camera from where it is, intro from its first frame)
-    setRenderScale(H0 / 1080);
+    // 480p is 853⅓ wide at 16:9; the encoder wants even numbers, so draw a hair larger and crop to 854×480
+    setRenderScale(Math.max(W0 / W, H0 / H));
+    if (canvas.width !== W0 || canvas.height !== H0) { canvas.width = W0; canvas.height = H0; }
     R.staleMs = 0;
     INTRO.key = '';
     R.camFrom = S.follow ? { view: { ...R.fv }, tau: T_START } : null;
@@ -11743,6 +12389,7 @@ async function exportVideo() {
   $('#saveNote').textContent = `MP4 · H.264${acfg ? ' + ' + (acfg.mux === 'aac' ? 'AAC' : 'Opus') : ''} · ${W0}×${H0} · steady ${fps} fps · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · ${mb} MB` +
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
+    (voiceMissing ? ` · ${voiceMissing} spoken line${voiceMissing > 1 ? 's' : ''} couldn’t be fetched from Scratch’s voice service, so the video doesn’t have ${voiceMissing > 1 ? 'them' : 'it'}.` : '') +
     (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'}): drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
