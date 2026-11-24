@@ -2281,14 +2281,14 @@ function realEEW(ph, key) {
 const eewFor = (DB, ph, ev) => (ev.eewSrc && ev.eewReal !== false && realEEW(ph, ev.eewSrc)) || genEEW(DB, ph, ev.tune);
 
 // intro screen: a blurred, bare map with a title card, then the blur clears and the graphics come in
-const INTRO_DEFAULT = { on: false, style: 'card', kicker: '', title: '', sub: '', body: '', facts: true, note: true, bar: true,
+const INTRO_DEFAULT = { on: false, style: 'card', box: true, kicker: '', title: '', sub: '', body: '', facts: true, note: true, bar: true,
   color: '#E8101E', dur: 5, reveal: 1.6, blur: 16, dim: 0.35, when: 'always' };
 function normIntro(o) {
   const x = { ...INTRO_DEFAULT, ...(o && typeof o === 'object' ? o : {}) };
   const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? clamp(v, lo, hi) : d);
   const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
   return {
-    on: !!x.on, style: ['card', 'lower', 'text'].includes(x.style) ? x.style : 'card',
+    on: !!x.on, style: ['card', 'lower', 'text'].includes(x.style) ? x.style : 'card', box: x.box !== false,
     kicker: str(x.kicker, 80), title: str(x.title, 120), sub: str(x.sub, 160), body: str(x.body, 600),
     facts: x.facts !== false, note: x.note !== false, bar: x.bar !== false, logo: x.logo !== false,
     color: /^#[0-9a-f]{6}$/i.test(x.color) ? x.color : INTRO_DEFAULT.color,
@@ -5879,6 +5879,8 @@ function drawIntroCard(c, T, cfg, a, rise, hold) {
   c.translate(0, rise);
   const text = cfg.style === 'text';
   const lower = cfg.style === 'lower';
+  // the box can go with any layout: then it's just the words, with a dark halo so they still read on the map
+  const boxed = cfg.box !== false;
   const cardW = lower ? 1180 : 1040, padX = 48;
   const innerW = cardW - padX * 2;
   // measure
@@ -5889,7 +5891,7 @@ function drawIntroCard(c, T, cfg, a, rise, hold) {
   const hgt = 58 + 20 + tpx + (T.sub ? 44 : 0) + (T.facts.length ? 26 + 76 : 0) + (bodyLines.length ? 20 + bodyLines.length * 34 : 0) + (T.note ? 46 : 8) + 34;
   const x = lower ? 64 : (W - cardW) / 2;
   const y = lower ? H - hgt - 120 : (H - hgt) / 2;
-  if (!text) {
+  if (!text && boxed) {
     c.shadowColor = 'rgba(0,0,0,0.45)'; c.shadowBlur = 40; c.shadowOffsetY = 12;
     rr(c, x, y, cardW, hgt, 14); c.fillStyle = 'rgba(9,14,22,0.86)'; c.fill();
     c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0;
@@ -5900,13 +5902,13 @@ function drawIntroCard(c, T, cfg, a, rise, hold) {
     if (lower) c.fillRect(x, y, 8, hgt); else c.fillRect(x, y, cardW, 6);
     c.restore();
   }
-  const halo = text ? 'rgba(5,9,15,0.75)' : null;
+  const halo = text || !boxed ? 'rgba(5,9,15,0.75)' : null;
   const cx = text ? W / 2 : x + padX + (lower ? 6 : 0), align = text ? 'center' : 'left';
   let yy = y + 40 + 18;
   if (cfg.logo !== false) {
     const lh = 30, lw = LOGO.word.w * (lh / LOGO.word.h);
     if (text) { c.save(); c.shadowColor = 'rgba(0,0,0,0.7)'; c.shadowBlur = 10 * R.K; drawLogo(c, 'word', W / 2 - lw / 2, yy - 96, lh + 6, '#FFFFFF', 0.95); c.restore(); }
-    else drawLogo(c, 'word', x + cardW - padX - lw, y + 26, lh, '#FFFFFF', 0.92);
+    else { c.save(); if (!boxed) { c.shadowColor = 'rgba(0,0,0,0.7)'; c.shadowBlur = 10 * R.K; } drawLogo(c, 'word', x + cardW - padX - lw, y + 26, lh, '#FFFFFF', 0.92); c.restore(); }
   }
   // kicker
   c.save();
@@ -5921,10 +5923,12 @@ function drawIntroCard(c, T, cfg, a, rise, hold) {
     const n = T.facts.length, gap = 14, cw2 = (innerW - gap * (n - 1)) / n;
     T.facts.forEach(([k, v], i) => {
       const fx = (text ? (W - innerW) / 2 : x + padX + (lower ? 6 : 0)) + i * (cw2 + gap);
-      rr(c, fx, yy, cw2, 76, 8); c.fillStyle = text ? 'rgba(9,14,22,0.7)' : 'rgba(255,255,255,0.05)'; c.fill();
-      txt(c, k, fx + 14, yy + 26, fnt(700, 14, introFam(k)), '#7D8EA1');
+      if (boxed) { rr(c, fx, yy, cw2, 76, 8); c.fillStyle = text ? 'rgba(9,14,22,0.7)' : 'rgba(255,255,255,0.05)'; c.fill(); }
+      // without tiles, the centered layout centers each fact in its column too
+      const fh = boxed ? null : halo, mid = text && !boxed, tx = mid ? fx + cw2 / 2 : fx + (boxed ? 14 : 0), fa = mid ? 'center' : 'left';
+      txt(c, k, tx, yy + 26, fnt(700, 14, introFam(k)), boxed ? '#7D8EA1' : '#A9B8C8', fa, fh, 4);
       const vf = introFam(v), vpx = fitSize(c, v, cw2 - 28, hasCJK(v) ? FONT_JP : FONT_NUM, 600, 30, 15);
-      txt(c, v, fx + 14, yy + 62, fnt(600, vpx, hasCJK(v) ? FONT_JP : vf === FONT_UI ? FONT_NUM : vf), '#F2F6FA');
+      txt(c, v, tx, yy + 62, fnt(600, vpx, hasCJK(v) ? FONT_JP : vf === FONT_UI ? FONT_NUM : vf), '#F2F6FA', fa, fh, 5);
     });
     yy += 76;
   }
@@ -8968,7 +8972,8 @@ function inspContent(it, D, set) {
         fRow('Subtitle', cText(() => D.sub, set(D, 'sub'), { ph: auto.sub || 'Optional', max: 160 })),
         fRow('Top line', cText(() => D.kicker, set(D, 'kicker'), { ph: auto.kicker, max: 80 })),
         fRow('More text', cArea(() => D.body, set(D, 'body'), { rows: 3, ph: 'Anything else you want on the card. New line = new line.', max: 600 })),
-        fRow('Layout', cSel(() => D.style, set(D, 'style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Just the text']])),
+        fRow('Layout', cSel(() => D.style, set(D, 'style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Centered, no card']])),
+        cChk(() => D.box !== false, set(D, 'box'), 'Box behind the text', 'Off: no card and no tiles, just the words with a soft shadow so they still read on the map.'),
         fRow('Accent', cColor(() => D.color, set(D, 'color'))),
         cChk(() => D.hide !== false, set(D, 'hide'), 'Slide the boxes off while it’s up', 'The clock and legend go too, leaving just the map. Everything slides back when it goes, showing whatever is happening by then.'),
         cChk(() => D.facts, set(D, 'facts'), 'Quake facts', 'Epicenter, magnitude, depth and origin time'),
@@ -11522,7 +11527,8 @@ function introControls(get, set) {
     fRow('Subtitle', cText(() => I().sub, up('sub'), { ph: auto.sub || 'Optional', max: 160 })),
     fRow('Top line', cText(() => I().kicker, up('kicker'), { ph: auto.kicker, max: 80 })),
     fRow('More text', cArea(() => I().body, up('body'), { rows: 3, ph: 'Anything else you want on the card. New line = new line.', max: 600 })),
-    fRow('Layout', cSel(() => I().style, up('style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Just the text']])),
+    fRow('Layout', cSel(() => I().style, up('style'), [['card', 'Card in the middle'], ['lower', 'Lower third'], ['text', 'Centered, no card']])),
+    cChk(() => I().box, up('box'), 'Box behind the text', 'Off: no card and no tiles, just the words with a soft shadow so they still read on the map.'),
     fRow('Accent', cColor(() => I().color, up('color'))),
     cChk(() => I().facts, up('facts'), 'Quake facts', 'Epicenter, magnitude, depth and origin time'),
     cChk(() => I().logo !== false, up('logo'), 'Quaker logo on the card'),
