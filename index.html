@@ -6106,7 +6106,7 @@ const AU = {
         const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140;
         this.rumbleGain = this.ctx.createGain(); this.rumbleGain.gain.value = 0;
         src.connect(lp); lp.connect(this.rumbleGain); this.rumbleGain.connect(this.master); src.start();
-        for (const f of this.files) if (f.raw && !this.buffers.has(f.id)) this.decode(f);
+        this.allDecoded();
       }
       if (this.ctx.state === 'suspended') this.ctx.resume();
       return true;
@@ -6151,6 +6151,7 @@ const AU = {
       const buf = this.buffers.get(key);
       if (buf) { const src = this.ctx.createBufferSource(); src.buffer = buf; src.connect(dest); src.start(t); dur = buf.duration; }
     } else if (kind === 'p:') { const P = this.patterns.find((p) => p.id === key); if (P) dur = this.playPattern(dest, t, P); }
+    if (this.offline && this.mix && dur > 0) this.mix.played++;
     // release the node once the sound (however long) has finished. Not in an offline mix: it renders after
     // everything is scheduled, so a timer could cut off the sounds near the end of a long video
     if (!this.offline) setTimeout(() => { try { dest.disconnect(); } catch (e) { /* gone */ } }, (dur + startAt + 1.5) * 1000);
@@ -6207,8 +6208,9 @@ const AU = {
     if (id === 'same') id = SOUND_DEFAULTS[slot] === 'same' ? 'b:chime2' : SOUND_DEFAULTS[slot];
     const v = (this.slotVol[slot] ?? 1) * extraVol;
     const d = this.play(id, v);
-    // a removed file or pattern falls back to the built-in default instead of going silent
-    if (!d && id !== 'none' && id !== SOUND_DEFAULTS[slot] && !this.has(id)) return this.play(SOUND_DEFAULTS[slot], v);
+    // a removed, broken or not-yet-decoded file (or a removed pattern) falls back to the built-in default instead
+    // of going silent
+    if (!d && id !== 'none' && id !== SOUND_DEFAULTS[slot] && this.unplayable(id)) { if (this.mix) this.mix.fellBack++; return this.play(SOUND_DEFAULTS[slot], v); }
     return d;
   },
   rumble(level) {
@@ -6226,13 +6228,26 @@ const AU = {
   untapRecording() {
     if (this.recDest) { try { this.out.disconnect(this.recDest); } catch (e) { /* gone */ } this.recDest = null; }
   },
-  async decode(f) {
-    if (!this.ctx || !f.raw) return;
-    try {
-      const buf = await this.ctx.decodeAudioData(f.raw.slice(0));
-      this.buffers.set(f.id, buf);
-      f.dur = buf.duration;
-    } catch (e) { f.bad = true; }
+  decode(f) {
+    if (!this.ctx || !f.raw || f.bad || this.buffers.has(f.id)) return Promise.resolve();
+    if (f.pending) return f.pending;
+    const ctx = this.ctx;
+    f.pending = (async () => {
+      try {
+        const buf = await ctx.decodeAudioData(f.raw.slice(0));
+        this.buffers.set(f.id, buf);
+        f.dur = buf.duration;
+      } catch (e) { f.bad = true; } finally { f.pending = null; }
+    })();
+    return f.pending;
+  },
+  // every imported file decoded (they only start decoding once there's sound, which an export can be the first
+  // thing to need)
+  allDecoded() { return this.ctx ? Promise.all(this.files.map((f) => this.decode(f))) : Promise.resolve(); },
+  // a file that isn't here, or can't be played (not decoded, or broken)
+  unplayable(id) {
+    if (!this.has(id)) return true;
+    return !!id && id.startsWith('f:') && !this.buffers.has(id.slice(2));
   },
   label(id) {
     if (!id || id === 'none') return 'Silent';
@@ -10322,7 +10337,7 @@ const PREFS_DEFAULT = {
   clock: { h12: false },
   sound: { on: true, vol: 0.7, slots: { ...SOUND_DEFAULTS }, slotVol: {}, rumble: true, patterns: [], levelOn: true, levelSrc: 'net', fcOn: false, fcWhen: 'issue', fcMix: 'replace', fcV: 2 },
   voice: { ...VOICE_DEFAULT },
-  rec: { res: 1080, fps: 30, sound: true },
+  rec: { res: 1080, fps: 30, sound: true, workers: true },
   cam: { ...CAM_DEFAULT },
   fonts: { jp: '', ui: '', num: '', jpScale: 1, uiScale: 1, numScale: 1 },
   lang: 'ja',
@@ -10817,7 +10832,7 @@ function fireSounds(prev, cur) {
       const id = /^[bfp]:/.test(s.sound) ? s.sound : 'b:' + s.sound;
       const v = (s.vol ?? 1) * (s.slot ? (AU.slotVol[s.slot] ?? 1) : 1);
       // a file that isn't in this browser (shared scenario, deleted upload) falls back to the normal sound
-      if (!AU.play(id, v) && s.slot && !AU.has(id)) AU.playSlot(s.slot);
+      if (!AU.play(id, v) && s.slot && AU.unplayable(id)) AU.playSlot(s.slot);
     } else AU.playSlot(s.slot);
   }
 }
@@ -11966,6 +11981,7 @@ function buildSettings() {
     fRow('Resolution', cSel(() => String(P.rec.res), (v) => { P.rec.res = +v; prefsChanged(); }, [['720', '1280 × 720'], ['1080', '1920 × 1080 (Full HD)'], ['1440', '2560 × 1440']])),
     fRow('Frame rate', cSel(() => String(P.rec.fps), (v) => { P.rec.fps = +v; prefsChanged(); }, [['30', '30 fps'], ['60', '60 fps (smoother, bigger file)']])),
     cChk(() => P.rec.sound, prefSet(P.rec, 'sound'), 'Record the sound too'),
+    cChk(() => P.rec.workers !== false, prefSet(P.rec, 'workers'), 'Use render workers when they’re faster', 'Several copies of the app draw and encode parts of the video side by side, after a quick speed test. Off: this page draws every frame itself, one after another. Slower, but the simplest way.'),
     h('p', { class: 'note' }, 'Videos are rendered frame by frame, not screen-recorded: a steady frame rate and a plain H.264 + AAC MP4 that CapCut and TikTok’s editor open cleanly. It can take longer than the scenario itself, and you can switch tabs while it works.'),
     h('p', { class: 'note', text: 'Chrome, Edge and Safari save MP4. Firefox saves WebM. The recording plays the scenario once from the start at your chosen speed, then stops by itself.' })));
 }
@@ -12421,6 +12437,7 @@ async function exportAudio(plan, fps, onProgress) {
     const rg = oc.createGain(); rg.gain.value = 0;
     src.connect(lp); lp.connect(rg); rg.connect(master); src.start(0);
     Object.assign(AU, { ctx: oc, master, out: comp, rumbleGain: rg, offline: true, vEnd: 0 });
+    EXP.mix = AU.mix = { played: 0, fellBack: 0, voice: VOICE.played };
     // walk the timeline frame by frame, firing what playback would fire
     if (plan.introDur > 0) { AU.offAt = 0; AU.playSlot('intro'); }
     const n = Math.round(plan.total * fps);
@@ -12438,6 +12455,8 @@ async function exportAudio(plan, fps, onProgress) {
     onProgress(0.5);
     return await oc.startRendering();
   } finally {
+    if (AU.mix) AU.mix.voice = VOICE.played - AU.mix.voice;
+    AU.mix = null;
     Object.assign(AU, saved);
   }
 }
@@ -12461,7 +12480,7 @@ async function exportVideo() {
   }
   closeAllDialogs();
   discardRecording();
-  EXP.busy = true; EXP.cancel = false; EXP.why = ''; EXP.stats = null;
+  EXP.busy = true; EXP.cancel = false; EXP.why = ''; EXP.stats = null; EXP.mix = null;
   S.recording = true; S.exporting = true;
   document.body.classList.add('recording');
   for (const b of [$('#btnRecord'), $('#btnRecord2')]) { b.classList.add('on'); b.querySelector('span').textContent = 'Stop rendering'; }
@@ -12489,6 +12508,7 @@ async function exportVideo() {
         voiceMissing = await voiceReady(vl, S.eff, (f) => badge('voice ' + Math.round(f * 100) + '%'));
       }
       badge('sound…');
+      await AU.allDecoded();
       const buf = await exportAudio(plan, fps, () => {});
       let firstA = true;
       const ae = new AudioEncoder({ output: (c, m) => { const cc = acfg.mux === 'aac' ? aacRaw(c) : c; muxer.addAudioChunk(cc, audioMeta(acfg, m, firstA)); firstA = false; }, error: (e) => { fail = fail || e; } });
@@ -12614,7 +12634,7 @@ async function exportVideo() {
     // own encoder, and the encoded frames go into the MP4 in order. A worker that breaks gives its unfinished
     // frames back to the others; if none are left, the page does the rest.
     let pool = null, poolFrames = 0, poolWhy = '', poolErr = '', poolN = 0;
-    const poolP = EXP.force !== 'single' && poolSupported(/^workers/.test(EXP.force || '')) && n > fps * 4 ? startPool({ W0, H0, fps, plan, vcfg, gop }).catch(() => null) : null;
+    const poolP = EXP.force !== 'single' && (rp.workers !== false || /^workers/.test(EXP.force || '')) && poolSupported(/^workers/.test(EXP.force || '')) && n > fps * 4 ? startPool({ W0, H0, fps, plan, vcfg, gop }).catch(() => null) : null;
     const poolRun = () => new Promise((resolve) => {
       const queue = [];
       for (let a = 0; a < n; a += gop) queue.push({ from: a, to: Math.min(n, a + gop) });
@@ -12825,7 +12845,7 @@ async function exportVideo() {
     if (ve) { await ve.flush(); ve.close(); }
     const secs = (performance.now() - st.t0) / 1000, sn = Math.max(1, st.n);
     EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / sn, grab: st.grab / sn, wait: st.wait / sn, secs, mode: mode === 'try' ? 'direct' : mode,
-      workers: poolFrames ? poolN : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : 'off', poolErr, poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
+      workers: poolFrames ? poolN : 0, poolShare: poolFrames / n, poolWhy: poolP ? poolWhy : rp.workers === false ? 'setting' : 'off', poolErr, poolDiff, reconfig: EXP.reconfig, race, gpu: !!(pool && pool.gpu),
       cores: navigator.hardwareConcurrency || 0, hw: pageCfg.hardwareAcceleration === 'prefer-hardware', sw: !!poolFrames && race.win === 'sw', cardHw: vcfg.hardwareAcceleration === 'prefer-hardware', swOffered: !!swcfg };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
@@ -12862,6 +12882,9 @@ async function exportVideo() {
   $('#saveNote').textContent = `MP4 · H.264${acfg ? ' + ' + (acfg.mux === 'aac' ? 'AAC' : 'Opus') : ''} · ${W0}×${H0} · steady ${fps} fps · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · ${mb} MB` +
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
+    // what went into the soundtrack, so a missing sound shows here instead of after watching the whole thing
+    (acfg && EXP.mix ? ` · Sound: ${EXP.mix.played} sound${EXP.mix.played === 1 ? '' : 's'}` + (EXP.mix.voice ? `, ${EXP.mix.voice} spoken line${EXP.mix.voice === 1 ? '' : 's'}` : '') +
+      (EXP.mix.fellBack ? ` (${EXP.mix.fellBack} imported sound${EXP.mix.fellBack === 1 ? '' : 's'} couldn’t be read, so the built-in one played)` : '') : '') +
     (voiceMissing ? ` · ${voiceMissing} spoken line${voiceMissing > 1 ? 's' : ''} couldn’t be fetched from Scratch’s voice service, so the video doesn’t have ${voiceMissing > 1 ? 'them' : 'it'}.` : '') +
     (EXP.stats ? exportSpeedNote(EXP.stats) : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
