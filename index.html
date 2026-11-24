@@ -4334,9 +4334,18 @@ const R = {
   labels: { key: '', list: [] }, icons: { key: '', list: [] },
   stn: { evI: null, touched: [], nTrig: 0, trigKey: '' },
 };
-function makeLayer() { const cv = document.createElement('canvas'); return { cv, c: cv.getContext('2d'), key: null, v: null, t: 0 }; }
-function initRenderer(canvas) {
-  R.canvas = canvas; R.ctx = canvas.getContext('2d');
+// a canvas here or in a render worker (no document there)
+function mkCanvas(w, h) {
+  if (typeof document === 'undefined') return new OffscreenCanvas(Math.max(1, w | 0), Math.max(1, h | 0));
+  const cv = document.createElement('canvas');
+  if (w) cv.width = w;
+  if (h) cv.height = h;
+  return cv;
+}
+function makeLayer() { const cv = mkCanvas(); return { cv, c: cv.getContext('2d', R.ctxOpts || undefined), key: null, v: null, t: 0 }; }
+function initRenderer(canvas, opts) {
+  R.ctxOpts = opts || null;
+  R.canvas = canvas; R.ctx = canvas.getContext('2d', opts || undefined);
   R.layers = { live: makeLayer(), flash: makeLayer(), obs: makeLayer() };
 }
 function setRenderScale(k) {
@@ -5809,14 +5818,14 @@ function renderFrame(F) {
 const INTRO = { key: '', bg: null, tmp: null, filter: null };
 function canFilter() {
   if (INTRO.filter === null) {
-    try { const c = document.createElement('canvas').getContext('2d'); c.filter = 'blur(2px)'; INTRO.filter = c.filter === 'blur(2px)'; } catch (e) { INTRO.filter = false; }
+    try { const c = mkCanvas(2, 2).getContext('2d'); c.filter = 'blur(2px)'; INTRO.filter = c.filter === 'blur(2px)'; } catch (e) { INTRO.filter = false; }
   }
   return INTRO.filter;
 }
 // a blurred copy of the canvas: the canvas filter where there is one, else shrink and grow it back
 function blurCopy(src, px, into) {
   const w = src.width, h = src.height;
-  const out = into && into.width === w && into.height === h ? into : document.createElement('canvas');
+  const out = into && into.width === w && into.height === h ? into : mkCanvas(w, h);
   out.width = w; out.height = h;
   const o = out.getContext('2d');
   o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.filter = 'none';
@@ -5831,8 +5840,8 @@ function blurCopy(src, px, into) {
   }
   const f = clamp(px / 3, 2, 24);
   const sw = Math.max(8, Math.round(w / f)), sh = Math.max(8, Math.round(h / f));
-  const a = document.createElement('canvas'); a.width = Math.max(sw * 2, 16); a.height = Math.max(sh * 2, 16);
-  const b = document.createElement('canvas'); b.width = sw; b.height = sh;
+  const a = mkCanvas(Math.max(sw * 2, 16), Math.max(sh * 2, 16));
+  const b = mkCanvas(sw, sh);
   const ac = a.getContext('2d'), bc = b.getContext('2d');
   ac.imageSmoothingQuality = 'high'; bc.imageSmoothingQuality = 'high'; o.imageSmoothingQuality = 'high';
   ac.drawImage(src, 0, 0, a.width, a.height);
@@ -5943,7 +5952,7 @@ function drawCardOverlay(c, env, en) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
   const px = cfg.blur * R.K * e;
   if (px > 0.4 && canFilter()) {
-    CARD.tmp = CARD.tmp && CARD.tmp.width === cw && CARD.tmp.height === ch ? CARD.tmp : Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+    CARD.tmp = CARD.tmp && CARD.tmp.width === cw && CARD.tmp.height === ch ? CARD.tmp : mkCanvas(cw, ch);
     const t2 = CARD.tmp.getContext('2d');
     t2.setTransform(1, 0, 0, 1, 0, 0); t2.clearRect(0, 0, cw, ch); t2.drawImage(R.canvas, 0, 0);
     c.filter = `blur(${px.toFixed(2)}px)`;
@@ -5989,7 +5998,7 @@ function renderIntroFrame(F, I) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
   if (e < 1) {
     if (canFilter() && px > 0.5) {
-      INTRO.tmp = INTRO.tmp && INTRO.tmp.width === cw && INTRO.tmp.height === ch ? INTRO.tmp : Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+      INTRO.tmp = INTRO.tmp && INTRO.tmp.width === cw && INTRO.tmp.height === ch ? INTRO.tmp : mkCanvas(cw, ch);
       const t2 = INTRO.tmp.getContext('2d');
       t2.setTransform(1, 0, 0, 1, 0, 0); t2.clearRect(0, 0, cw, ch); t2.drawImage(R.canvas, 0, 0);
       const r = px * (1 - e);
@@ -7116,9 +7125,11 @@ const W_NAMES = { 100: 'Thin', 200: 'ExtraLight', 300: 'Light', 400: 'Regular', 
 const faceLabel = (f) => (f.wmax ? `Variable ${f.weight}–${f.wmax}` : W_NAMES[Math.round(f.weight / 100) * 100] || String(f.weight)) + (f.italic ? ' Italic' : '');
 
 // ---------------------------------------------------------------- imported files
+// the page's fonts, or a render worker's
+const fontSet = () => (typeof document !== 'undefined' ? document.fonts : self.fonts);
 function regFamily(key) {
   const old = FONTS.fams.get(key);
-  if (old) for (const ff of old.faces) try { document.fonts.delete(ff); } catch (e) { /* not added */ }
+  if (old) for (const ff of old.faces) try { fontSet().delete(ff); } catch (e) { /* not added */ }
   const files = FONTS.files.filter((f) => famKeyOf(f.family) === key);
   if (!files.length) { FONTS.fams.delete(key); return; }
   const upright = files.filter((f) => !f.italic);
@@ -7128,7 +7139,7 @@ function regFamily(key) {
     const w = f.wmax ? `${f.weight} ${f.wmax}` : (!f.italic && upright.length === 1) || (f.italic && upright.length === 0 && files.length === 1) ? '1 1000' : String(f.weight);
     try {
       const ff = new FontFace(key, f.raw, { weight: w, style: f.italic ? 'italic' : 'normal' });
-      document.fonts.add(ff);
+      fontSet().add(ff);
       ff.load().catch(() => {});
       faces.push(ff);
     } catch (e) { /* this browser won't take it */ }
@@ -10294,7 +10305,7 @@ function buildSyncSettings() {
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const T_START = -3;
-const REDUCED_OS = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const REDUCED_OS = !!(typeof window !== 'undefined' && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const PREFS_DEFAULT = {
   v: 2,
   anim: { preset: 'glide', in: 'slide', out: 'slide', dur: 0.6, ease: 'swiftOut', roll: true },
@@ -10365,7 +10376,7 @@ const S = {
   undo: [], redo: [], proj: null, intro: null, loop: false,
 };
 let needRender = true;
-const canvas = $('#stage');
+const canvas = typeof document !== 'undefined' ? $('#stage') : null;
 
 // ---------------------------------------------------------------- prefs
 function mergePrefs(p) {
@@ -11163,7 +11174,7 @@ function hitBox(p) {
   for (let i = R.hits.length - 1; i >= 0; i--) { const b = R.hits[i]; if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b; }
   return null;
 }
-canvas.addEventListener('pointerdown', (e) => {
+if (canvas) canvas.addEventListener('pointerdown', (e) => {
   if (!S.ready) return;
   if (S.intro && !S.recording) {
     const ic = normIntro(S.doc.intro);
@@ -11201,7 +11212,7 @@ canvas.addEventListener('pointerdown', (e) => {
     drag = null; moved = true;
   }
 });
-canvas.addEventListener('pointermove', (e) => {
+if (canvas) canvas.addEventListener('pointermove', (e) => {
   if (!ptrs.has(e.pointerId)) return;
   const prev = ptrs.get(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -11247,9 +11258,9 @@ function endPointer(e) {
     drag = { x: p.x, y: p.y, cx: R.view.cx, cy: R.view.cy }; pinch = null; moved = true;
   }
 }
-canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', (e) => {
+if (canvas) canvas.addEventListener('pointerup', endPointer);
+if (canvas) canvas.addEventListener('pointercancel', endPointer);
+if (canvas) canvas.addEventListener('wheel', (e) => {
   if (!S.ready) return;
   e.preventDefault();
   const p = logicalPoint(e);
@@ -12294,7 +12305,7 @@ async function boot() {
   needRender = true;
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
-    S, R, AU, REC, ED, EXP, VOICE, warnAreaNames,
+    S, R, AU, REC, ED, EXP, VOICE, warnAreaNames, startPool, stopPool, exportPlan,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, scene: (t) => sceneAt(S.world, t ?? S.tau, S.prefs), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
@@ -12303,7 +12314,8 @@ async function boot() {
       lonLatToScreen, mapRegion: () => (R.lastLay ? mapRegion(R.lastLay) : null), SY: () => SY, syncRun, syncStart, syncStop, syncWipe, exportBackup, importBackup, importBackupFile, syncLinkGitHub, syncUnlinkGitHub, GH },
   };
 }
-boot();
+// the same code runs as a video-render helper inside a worker (see xworker.js)
+if (typeof document === 'undefined') workerMain(); else boot();
 
 // ============================================================== Quaker v2 · video export
 // Videos are rendered frame by frame instead of screen-recorded. Every frame sits exactly 1/fps after the last
@@ -12505,7 +12517,7 @@ async function exportVideo() {
     // later. A stretch of the first map frames (not the intro, which is too light to tell) tries both, and the
     // rest go with whichever is faster on this device.
     const canBitmap = typeof createImageBitmap === 'function';
-    let mode = EXP.force || (canBitmap ? 'try' : 'direct');
+    let mode = EXP.force === 'direct' || EXP.force === 'bitmap' ? EXP.force : canBitmap ? 'try' : 'direct';
     const TRY = 12, T0 = Math.min(Math.ceil((plan.introDur + 0.2) * fps), Math.max(0, n - 2 * TRY)), trial = { direct: 0, bitmap: 0 };
     let pending = null;
     const ts = (k) => Math.round((k * 1e6) / fps), fdur = Math.round(1e6 / fps);
@@ -12527,46 +12539,130 @@ async function exportVideo() {
         return false;
       }
     };
-    const st = { draw: 0, grab: 0, wait: 0, t0: performance.now() };
+    const st = { draw: 0, grab: 0, wait: 0, n: 0, t0: performance.now() };
     let lastYield = performance.now();
-    for (let i = 0; i < n && !fail && !EXP.cancel; i++) {
-      const how = mode === 'try' ? (i < T0 + TRY ? 'direct' : 'bitmap') : mode;
-      const a = performance.now();
-      exportStateAt(plan, i / fps);
-      doRender();
-      const b = performance.now();
-      if (how === 'bitmap') {
-        const p = createImageBitmap(canvas);
-        if (!(await flushPending())) { mode = 'direct'; p.then((x) => x.close(), () => {}); exportStateAt(plan, i / fps); doRender(); encodeDirect(i); }
-        else pending = { p, k: i };
-      } else {
-        if (pending) await flushPending();
-        encodeDirect(i);
-      }
-      const c = performance.now();
-      while (ve.encodeQueueSize > 4 && !fail) await yieldNow();
-      const e = performance.now();
-      st.draw += b - a; st.grab += c - b; st.wait += e - c;
-      // the trial: skip the first two of each (warming up), then time whole frames
-      if (mode === 'try') {
-        if ((i >= T0 + 2 && i < T0 + TRY) || i >= T0 + TRY + 2) trial[how] += e - a;
-        if (i === T0 + 2 * TRY - 1) {
-          mode = trial.bitmap / (TRY - 2) < (trial.direct / (TRY - 2)) * 0.95 ? 'bitmap' : 'direct';
-          console.info('export capture', mode, JSON.stringify({ direct: trial.direct / (TRY - 2), bitmap: trial.bitmap / (TRY - 2) }));
+    // drawing on this page, frame by frame, from `from` until `stop(i)` says to hand over (or the end)
+    const singleRun = async (from, stop) => {
+      for (let i = from; i < n && !fail && !EXP.cancel; i++) {
+        const how = mode === 'try' ? (i < T0 + TRY ? 'direct' : 'bitmap') : mode;
+        const a = performance.now();
+        exportStateAt(plan, i / fps);
+        doRender();
+        const b = performance.now();
+        if (how === 'bitmap') {
+          const p = createImageBitmap(canvas);
+          if (!(await flushPending())) { mode = 'direct'; p.then((x) => x.close(), () => {}); exportStateAt(plan, i / fps); doRender(); encodeDirect(i); }
+          else pending = { p, k: i };
+        } else {
+          if (pending) await flushPending();
+          encodeDirect(i);
         }
+        const c = performance.now();
+        while (ve.encodeQueueSize > 4 && !fail) await yieldNow();
+        const e = performance.now();
+        st.draw += b - a; st.grab += c - b; st.wait += e - c; st.n++;
+        // the trial: skip the first two of each (warming up), then time whole frames
+        if (mode === 'try') {
+          if ((i >= T0 + 2 && i < T0 + TRY) || i >= T0 + TRY + 2) trial[how] += e - a;
+          if (i === T0 + 2 * TRY - 1) {
+            mode = trial.bitmap / (TRY - 2) < (trial.direct / (TRY - 2)) * 0.95 ? 'bitmap' : 'direct';
+            console.info('export capture', mode, JSON.stringify({ direct: trial.direct / (TRY - 2), bitmap: trial.bitmap / (TRY - 2) }));
+          }
+        }
+        const pct = Math.floor((i / n) * 100);
+        if (pct !== shown) { shown = pct; badge(pct + '%'); }
+        // let the page breathe (progress, the Stop button) a few times a second, not every frame: each break lets
+        // the browser repaint the big canvas, which costs as much as drawing it
+        if (e - lastYield > 120) { await yieldNow(); lastYield = performance.now(); }
+        if (stop && stop(i)) { if (!(await flushPending())) mode = 'direct'; return i + 1; }
       }
-      const pct = Math.floor((i / n) * 100);
-      if (pct !== shown) { shown = pct; badge(pct + '%'); }
-      // let the page breathe (progress, the Stop button) a few times a second, not every frame: each break lets
-      // the browser repaint the big canvas, which costs as much as drawing it
-      if (e - lastYield > 120) { await yieldNow(); lastYield = performance.now(); }
+      if (!fail && !EXP.cancel) await flushPending();
+      else if (pending) { pending.p.then((x) => x.close(), () => {}); pending = null; }
+      return n;
+    };
+    // the render workers: they start up in the background while the first frames are drawn here (which also
+    // times this page), then take over if they're quicker
+    let pool = null, poolTried = false, poolFrames = 0, poolWhy = '';
+    const poolP = EXP.force !== 'single' && poolSupported(EXP.force === 'workers') && n > fps * 4 ? startPool({ W0, H0, fps, plan }).then((p) => { pool = p; return p; }, () => null) : null;
+    if (poolP) poolP.then((p) => { poolTried = true; if (!p) poolWhy = 'start'; });
+    const poolRun = (from) => new Promise((resolve) => {
+      const B = 4, ahead = clamp(Math.floor(360e6 / (W0 * H0 * 4)), pool.n * 2, 96);
+      const buf = new Map();
+      let next = from, give = from, done = false, tick = 0;
+      const end = (at) => {
+        if (done) return;
+        done = true; clearInterval(tick);
+        pool.onFrame = (k, bm) => bm.close(); pool.onDone = null; pool.onError = null;
+        for (const bm of buf.values()) bm.close();
+        buf.clear();
+        resolve(at);
+      };
+      const feed = () => {
+        for (const wk of pool.workers) {
+          if (wk.busy || give >= n || EXP.cancel || fail) continue;
+          if (give - next >= ahead || ve.encodeQueueSize > 12) break;
+          const a = give, b = Math.min(n, give + B);
+          give = b; wk.busy = true;
+          wk.w.postMessage({ type: 'render', from: a, to: b });
+        }
+      };
+      const drain = () => {
+        if (done) return;
+        while (buf.has(next) && ve.encodeQueueSize <= 12) {
+          const bm = buf.get(next);
+          buf.delete(next);
+          const vf = new VideoFrame(bm, { timestamp: ts(next), duration: fdur });
+          ve.encode(vf, { keyFrame: next % gop === 0 }); vf.close(); bm.close();
+          next++; poolFrames++;
+        }
+        const pct = Math.floor((next / n) * 100);
+        if (pct !== shown) { shown = pct; badge(pct + '%'); }
+        if (fail || EXP.cancel || next >= n) { end(next); return; }
+        feed();
+      };
+      pool.onFrame = (k, bm) => { if (k < next || done) { bm.close(); return; } buf.set(k, bm); drain(); };
+      pool.onDone = () => drain();
+      pool.onError = () => { poolWhy = 'error'; end(next); };
+      tick = setInterval(drain, 25);
+      feed();
+    });
+    // the workers draw the same frames as a stretch the page just drew, to see which is quicker on this device
+    const poolJob = (from, to, per) => new Promise((ok) => {
+      let left = 0;
+      pool.onFrame = (k, bm) => bm.close();
+      pool.onDone = () => { if (--left <= 0) ok(); };
+      pool.onError = () => ok(false);
+      for (let a = from, k = 0; a < to; a += per, k++) { left++; pool.workers[k % pool.n].w.postMessage({ type: 'render', from: a, to: Math.min(to, a + per) }); }
+    });
+    let at = await singleRun(0, poolP ? (i) => !!pool && i >= Math.min(T0 + 2 * TRY - 1, EXP.force === 'workers' ? 0 : n) : null);
+    let usePool = !!pool;
+    if (at < n && pool && !fail && !EXP.cancel && EXP.force !== 'workers') {
+      const K = Math.min(n - at, pool.n * 6);
+      if (K >= pool.n * 2) {
+        // each worker draws one frame first (that builds its map layers), then the race
+        await poolJob(at, at + pool.n, 1);
+        const p0 = performance.now();
+        await poolJob(at, at + K, Math.ceil(K / pool.n));
+        const pms = (performance.now() - p0) / K;
+        const s0 = performance.now(), from = at;
+        at = await singleRun(at, (i) => i >= from + K - 1);
+        const sms = (performance.now() - s0) / Math.max(1, at - from);
+        usePool = pms < sms * 0.9;
+        console.info('export workers', JSON.stringify({ workers: pool.n, workerMs: pms, pageMs: sms, use: usePool }));
+        if (!usePool) poolWhy = 'slower';
+      }
     }
-    if (!fail && !EXP.cancel) await flushPending();
-    else if (pending) { pending.p.then((x) => x.close(), () => {}); pending = null; }
+    if (at < n && pool && usePool && !fail && !EXP.cancel) {
+      at = await poolRun(at);
+      stopPool(pool);
+      if (at < n && !fail && !EXP.cancel) at = await singleRun(at, null);
+    } else if (pool) stopPool(pool);
+    else if (poolP) poolP.then((p) => stopPool(p));
     await ve.flush();
     ve.close();
-    const secs = (performance.now() - st.t0) / 1000;
-    EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / n, grab: st.grab / n, wait: st.wait / n, secs, mode: mode === 'try' ? 'direct' : mode };
+    const secs = (performance.now() - st.t0) / 1000, sn = Math.max(1, st.n);
+    EXP.stats = { fps: n / secs, x: plan.total / secs, draw: st.draw / sn, grab: st.grab / sn, wait: st.wait / sn, secs, mode: mode === 'try' ? 'direct' : mode,
+      workers: poolFrames ? pool.n : 0, poolShare: poolFrames / n, poolWhy: poolTried || poolWhy ? poolWhy : poolP ? 'late' : 'off' };
     console.info('export speed', JSON.stringify(EXP.stats));
     if (!fail && !EXP.cancel) {
       muxer.finalize();
@@ -12603,11 +12699,156 @@ async function exportVideo() {
     (acfg && acfg.mux === 'opus' ? ' · This browser can only make Opus sound, which some editors won’t read. Chrome on a Mac or Windows makes AAC.' : '') +
     (!acfg ? ' · ' + noSoundWhy(rp) : silent ? ' · The soundtrack is silent: nothing on the timeline makes a sound, or the volume is at 0.' : '') +
     (voiceMissing ? ` · ${voiceMissing} spoken line${voiceMissing > 1 ? 's' : ''} couldn’t be fetched from Scratch’s voice service, so the video doesn’t have ${voiceMissing > 1 ? 'them' : 'it'}.` : '') +
-    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'}): drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` : '');
+    (EXP.stats ? ` · Rendered at ${EXP.stats.fps.toFixed(0)} frames/s (${EXP.stats.x >= 1 ? EXP.stats.x.toFixed(1) + '× real time' : (1 / EXP.stats.x).toFixed(1) + '× slower than real time'})` +
+      (EXP.stats.workers ? ` with ${EXP.stats.workers} render workers (${Math.round(EXP.stats.poolShare * 100)}% of the frames)` : '') +
+      `; on the page: drawing ${EXP.stats.draw.toFixed(0)} ms, grabbing ${EXP.stats.grab.toFixed(0)} ms (${EXP.stats.mode}), encoder ${EXP.stats.wait.toFixed(0)} ms a frame` +
+      (EXP.stats.poolWhy === 'slower' ? ' · the render workers were slower here, so the page did it' : EXP.stats.poolWhy === 'start' ? ' · the render workers couldn’t start here' : '') : '');
   getDownloads().then((dl) => { if (!dl) $('#saveNote').textContent += ' · Saving files needs the Claude viewer. Open this page in Claude to save it.'; $('#btnSaveVid').disabled = !dl; });
   openDialog('dlgRec');
 }
 function stopExport() { if (EXP.busy) EXP.cancel = true; }
+
+// ============================================================== Quaker v2 · render workers
+// Video export in parallel: several workers each run this same app code with an OffscreenCanvas, draw their share
+// of the frames and hand them back as ImageBitmaps; the page puts them in order and encodes them. Every frame is
+// a pure function of its time, so the workers don't need to talk to each other. They draw on the CPU
+// (willReadFrequently), which spreads across cores instead of queueing up behind one GPU thread.
+
+// ---------------------------------------------------------------- inside a worker
+function workerMain() {
+  let plan = null, fps = 30;
+  self.onmessage = async (e) => {
+    const m = e.data;
+    try {
+      if (m.type === 'init') {
+        plan = m.plan; fps = m.fps;
+        S.prefs = m.prefs; S.eff = m.eff; UI_LANG = m.prefs.lang === 'en' ? 'en' : 'ja';
+        setFontFamilies(m.fam, m.sc);
+        const nf = await workerFonts(m.fonts);
+        S.DB = await loadData(m.b64);
+        S.doc = m.doc; S.mode = m.mode;
+        S.world = buildWorld(S.DB, S.doc, S.eff);
+        S.originMs = m.originMs; S.originFixed = true;
+        S.state = 'playing'; S.recording = true; S.exporting = true; S.follow = m.follow;
+        initRenderer(new OffscreenCanvas(m.W0, m.H0), { willReadFrequently: true });
+        R.K = m.K; R.staleMs = 0;
+        R.camFrom = m.camFrom; R.camHold = m.camHold;
+        if (m.view) { R.view = m.view; R.fv = m.fv || m.view; }
+        self.postMessage({ type: 'ready', fonts: nf });
+      } else if (m.type === 'render') {
+        for (let i = m.from; i < m.to; i++) {
+          exportStateAt(plan, i / fps);
+          const F = { world: S.world, tau: S.tau, prefs: S.eff, idle: false, originMs: S.originMs, tStart: T_START, selected: null, showEvents: false, pick: false, selEv: null };
+          if (S.intro) renderIntroFrame(F, S.intro); else renderFrame(F);
+          const bm = R.canvas.transferToImageBitmap();
+          self.postMessage({ type: 'frame', i, bm }, [bm]);
+        }
+        self.postMessage({ type: 'done', from: m.from, to: m.to });
+      }
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: String((err && err.stack) || err) });
+    }
+  };
+}
+// the fonts the page has: imported files as they are, and the Google Fonts pieces the page has loaded, found in
+// the same stylesheets
+async function workerFonts(spec) {
+  let n = 0;
+  FONTS.files = spec.files || [];
+  for (const key of new Set(FONTS.files.map((f) => famKeyOf(f.family)))) { regFamily(key); const fam = FONTS.fams.get(key); if (fam) for (const ff of fam.faces) { try { await ff.load(); n++; } catch (e) { /* skip */ } } }
+  const want = new Set((spec.google || []).map((g) => fontKeyOf(g.family, g.weight, g.style, g.range)));
+  const loads = [];
+  for (const url of spec.css || []) {
+    let css = '';
+    try { css = await (await fetch(url)).text(); } catch (e) { continue; }
+    for (const blk of css.match(/@font-face\s*{[^}]*}/g) || []) {
+      const prop = (k) => { const r = new RegExp(k + '\\s*:\\s*([^;]+);').exec(blk); return r ? r[1].trim() : ''; };
+      const fam = prop('font-family').replace(/^['"]|['"]$/g, ''), wt = prop('font-weight') || '400', sty = prop('font-style') || 'normal';
+      const range = prop('unicode-range'), src = /url\(([^)]+)\)/.exec(prop('src'));
+      if (!src || !want.has(fontKeyOf(fam, wt, sty, range))) continue;
+      try {
+        const ff = new FontFace(fam, `url(${src[1]})`, { weight: wt, style: sty, ...(range ? { unicodeRange: range } : {}) });
+        self.fonts.add(ff);
+        loads.push(ff.load().then(() => { n++; }, () => {}));
+      } catch (e) { /* skip */ }
+    }
+  }
+  await Promise.all(loads);
+  return n;
+}
+const fontKeyOf = (family, weight, style, range) => [String(family).replace(/^['"]|['"]$/g, '').toLowerCase(), String(weight), String(style || 'normal'),
+  String(range || '').replace(/\s+/g, '').toUpperCase()].join('|');
+
+// ---------------------------------------------------------------- on the page
+const POOL = { src: null };
+function poolSupported(force) {
+  try {
+    return typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && typeof OffscreenCanvas.prototype.transferToImageBitmap === 'function' &&
+      !!new OffscreenCanvas(1, 1).getContext('2d') && (force || (navigator.hardwareConcurrency || 2) >= 2);
+  } catch (e) { return false; }
+}
+// what a worker needs to draw exactly what the page would
+function poolInitMsg(o) {
+  const google = [];
+  for (const ff of document.fonts) {
+    if (ff.status !== 'loaded') continue;
+    const fam = String(ff.family).replace(/^['"]|['"]$/g, '');
+    if (FONTS.fams.has(fam)) continue;
+    google.push({ family: fam, weight: ff.weight, style: ff.style, range: ff.unicodeRange });
+  }
+  const css = [...document.querySelectorAll('link[rel=stylesheet]')].map((l) => l.href).filter((u) => /fonts\.googleapis\.com\/css2/.test(u));
+  const F = S.prefs.fonts || {}, fam = {}, sc = {};
+  for (const [r] of FONT_ROLES) { fam[r] = fontFamilyOf(F[r]); sc[r] = F[r + 'Scale']; }
+  return {
+    type: 'init', b64: document.getElementById('qdata').textContent.trim(), doc: JSON.parse(JSON.stringify(S.doc)), mode: S.mode,
+    prefs: JSON.parse(JSON.stringify(S.prefs)), eff: JSON.parse(JSON.stringify(S.eff)), originMs: S.originMs, follow: S.follow,
+    fam, sc, fonts: { files: FONTS.files.map((f) => ({ ...f, raw: f.raw.slice(0) })), google, css },
+    W0: o.W0, H0: o.H0, K: Math.max(o.W0 / W, o.H0 / H), camFrom: R.camFrom ? JSON.parse(JSON.stringify(R.camFrom)) : null, camHold: R.camHold,
+    view: { ...R.view }, fv: { ...R.fv }, plan: o.plan, fps: o.fps,
+  };
+}
+// start the workers; resolves to the pool, or null if they couldn't get going
+async function startPool(o) {
+  if (!POOL.src) {
+    const code = [...document.scripts].find((s) => !s.src && !s.type && s.textContent.includes('function workerMain('));
+    if (!code) return null;
+    POOL.src = URL.createObjectURL(new Blob(['self.QUAKER_WORKER = true;\n', code.textContent], { type: 'text/javascript' }));
+  }
+  // each worker holds its own copy of the map data and canvases (100 to 200 MB), so phones and tablets get fewer
+  const mobile = /iPhone|iPad|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  let n = clamp((navigator.hardwareConcurrency || 4) - 1, 2, mobile ? 3 : 6);
+  if (navigator.deviceMemory) n = Math.min(n, Math.max(2, Math.floor(navigator.deviceMemory)));
+  const msg = poolInitMsg(o);
+  const pool = { workers: [], onFrame: null, onDone: null, onError: null, dead: false, n };
+  const ready = [];
+  for (let k = 0; k < n; k++) {
+    let w;
+    try { w = new Worker(POOL.src); } catch (e) { break; }
+    const wk = { w, busy: false, k };
+    pool.workers.push(wk);
+    ready.push(new Promise((ok) => {
+      const t = setTimeout(() => ok(false), 30000);
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === 'ready') { clearTimeout(t); ok(m.fonts >= (msg.fonts.google.length ? 1 : 0)); }
+        else if (m.type === 'frame') { if (pool.onFrame) pool.onFrame(m.i, m.bm); else m.bm.close(); }
+        else if (m.type === 'done') { wk.busy = false; if (pool.onDone) pool.onDone(wk); }
+        else if (m.type === 'error') { clearTimeout(t); console.warn('render worker', m.msg); ok(false); if (pool.onError) pool.onError(m.msg); }
+      };
+      w.onerror = (e) => { clearTimeout(t); console.warn('render worker', e.message); ok(false); if (pool.onError) pool.onError(e.message); };
+    }));
+    // each gets its own copy (the font files are sent, not shared)
+    w.postMessage(k ? poolInitMsg(o) : msg);
+  }
+  const oks = await Promise.all(ready);
+  if (!pool.workers.length || oks.some((x) => !x)) { stopPool(pool); return null; }
+  return pool;
+}
+function stopPool(pool) {
+  if (!pool || pool.dead) return;
+  pool.dead = true;
+  for (const wk of pool.workers) { try { wk.w.terminate(); } catch (e) { /* gone */ } }
+}
 
 })();
 </script>
