@@ -112,13 +112,35 @@ body { font-family: var(--font-ui); font-size: 15px; line-height: 1.45; -webkit-
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 10px 12px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
 }
-.timeline { display: flex; align-items: center; gap: 10px; flex: 1 1 280px; min-width: 0; }
-.tl-track { position: relative; flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; }
-.tl-track input { width: 100%; margin: 0; position: relative; z-index: 1; background: transparent; }
-.tl-marks { position: absolute; left: 8px; right: 8px; top: 0; bottom: 0; pointer-events: none; }
-.tl-marks i { position: absolute; top: 2px; width: 3px; height: 8px; border-radius: 2px; transform: translateX(-50%); background: var(--c, #8C9DB0); }
-.timeline output { font-family: var(--font-num); font-size: 17px; font-weight: 600; min-width: 78px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
-
+/* the scrub bar: EEW stretches above the rail, key moments as ticks, a hover preview with the clock time */
+.scrubber { display: flex; align-items: center; gap: 14px; flex: 1 1 100%; min-width: 0; }
+.scrub { position: relative; flex: 1; min-width: 0; height: 46px; cursor: pointer; touch-action: none; outline: none; -webkit-user-select: none; user-select: none; }
+.scrub:focus-visible .scrub-rail { outline: 2px solid var(--accent); outline-offset: 3px; }
+.scrub-lane { position: absolute; left: 0; right: 0; top: 6px; height: 7px; }
+.scrub-lane i { position: absolute; top: 0; height: 100%; border-radius: 4px; background: var(--c); opacity: 0.85; }
+.scrub-rail { position: absolute; left: 0; right: 0; top: 19px; height: 6px; border-radius: 4px; background: #1B2A3B; overflow: hidden; transition: height 0.12s, top 0.12s; }
+.scrub:hover .scrub-rail, .scrub.drag .scrub-rail { top: 17px; height: 10px; }
+.scrub-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #2E7FD6, var(--accent)); }
+.scrub-hover { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,255,255,0.13); display: none; }
+.scrub:hover .scrub-hover { display: block; }
+.scrub.drag .scrub-hover { display: none; }
+.scrub-marks { position: absolute; left: 0; right: 0; top: 13px; height: 18px; pointer-events: none; }
+.scrub-marks i { position: absolute; top: 0; width: 3px; height: 18px; border-radius: 2px; transform: translateX(-50%); background: var(--c, #8C9DB0); box-shadow: 0 0 0 1px rgba(7,11,17,0.7); }
+.scrub-marks i.q { top: 26px; width: 8px; height: 8px; border-radius: 1px; transform: translateX(-50%) rotate(45deg); }
+.scrub-marks i.hot { width: 5px; box-shadow: 0 0 0 2px rgba(255,255,255,0.85); }
+.scrub-head { position: absolute; top: 22px; left: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 0 0 3px var(--accent), 0 2px 6px rgba(0,0,0,0.5); transition: transform 0.12s; pointer-events: none; }
+.scrub:hover .scrub-head, .scrub.drag .scrub-head { transform: scale(1.2); }
+.scrub-tip { position: absolute; bottom: 44px; left: 0; transform: translateX(-50%); background: #0B1420; border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 9px; white-space: nowrap; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 1px; z-index: 5; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+.scrub-tip b { font-family: var(--font-num); font-size: 16px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.scrub-tip span { font-size: 12px; color: var(--muted); }
+.scrub-times { display: flex; flex-direction: column; align-items: flex-end; min-width: 96px; line-height: 1.15; }
+.scrub-times #clockOut { font-family: var(--font-num); font-size: 22px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.scrub-times .sub { font-family: var(--font-num); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; gap: 6px; }
+.scrub[aria-disabled=true] { opacity: 0.5; pointer-events: none; }
+.deck { display: flex; align-items: center; gap: 6px; }
+.btn.play { min-width: 104px; justify-content: center; padding: 8px 16px; font-size: 15px; }
+.btn.play svg { width: 17px; height: 17px; }
+.btn.icon { padding: 7px 9px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .card h2, .insp h3, .dlg h3 { margin: 0; font-family: var(--font-num); font-weight: 600; font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
@@ -492,7 +514,8 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
   .tagline { display: none; }
   .proj-chip .pj-lab { display: none; }
   .transport { gap: 8px; }
-  .timeline { flex-basis: 100%; order: 5; }
+  .scrub-times { min-width: 80px; }
+  .scrub-times #clockOut { font-size: 18px; }
   .stage-wrap { width: 100%; }
   .stage-hint { display: none; }
   .tl-label { width: 132px; }
@@ -548,16 +571,28 @@ dialog.dlg::backdrop { background: rgba(2, 6, 10, 0.66); }
   </div>
 
   <section class="transport" aria-label="Playback">
-    <button class="btn primary" id="btnPlay" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg><span>Play</span></button>
-    <button class="btn" id="btnRestart" type="button" title="Restart (R)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 1-5.3 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2 3.5v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Restart</span></button>
-    <button class="btn" id="btnReport" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l7-5.5zM11.5 2.5h2v11h-2z" fill="currentColor"/></svg><span>Skip to report</span></button>
-    <div class="timeline">
-      <div class="tl-track">
-        <div class="tl-marks" id="tlMarks"></div>
-        <input type="range" id="timeline" min="-3" max="120" step="0.1" value="-3" aria-label="Time since origin">
+    <div class="scrubber">
+      <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Playback position" aria-valuemin="-3" aria-valuemax="120" aria-valuenow="-3" aria-valuetext="">
+        <div class="scrub-lane" id="scrubLane"></div>
+        <div class="scrub-rail"><div class="scrub-hover" id="scrubHover"></div><div class="scrub-fill" id="scrubFill"></div></div>
+        <div class="scrub-marks" id="tlMarks"></div>
+        <div class="scrub-head" id="scrubHead"></div>
+        <div class="scrub-tip" id="scrubTip" hidden><b id="scrubTipT"></b><span id="scrubTipL"></span></div>
       </div>
-      <output id="timeOut" for="timeline">−3.0 s</output>
+      <div class="scrub-times">
+        <output id="clockOut" for="scrub"></output>
+        <span class="sub"><output id="timeOut" for="scrub">−3.0 s</output><span id="durOut"></span></span>
+      </div>
     </div>
+    <div class="deck" role="group" aria-label="Playback buttons">
+      <button class="btn icon" id="btnPrevMoment" type="button" aria-label="Previous moment" title="Previous moment (,)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h2v11H3zM13.5 2.5v11L6 8z" fill="currentColor"/></svg></button>
+      <button class="btn icon" id="btnBack5" type="button" aria-label="Back 5 seconds" title="Back 5 seconds (←)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3v10L1.5 8zM14.5 3v10l-6-5z" fill="currentColor"/></svg></button>
+      <button class="btn primary play" id="btnPlay" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg><span>Play</span></button>
+      <button class="btn icon" id="btnFwd5" type="button" aria-label="Forward 5 seconds" title="Forward 5 seconds (→)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 3v10l6-5zM1.5 3v10l6-5z" fill="currentColor"/></svg></button>
+      <button class="btn icon" id="btnNextMoment" type="button" aria-label="Next moment" title="Next moment (.)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5h2v11h-2zM2.5 2.5v11L10 8z" fill="currentColor"/></svg></button>
+    </div>
+    <button class="btn" id="btnRestart" type="button" title="Restart (R)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 1-5.3 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2 3.5v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Restart</span></button>
+    <button class="btn" id="btnReport" type="button" title="Skip to the report (J)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l7-5.5zM11.5 2.5h2v11h-2z" fill="currentColor"/></svg><span>Skip to report</span></button>
     <div class="seg" role="radiogroup" aria-label="Playback speed">
       <input type="radio" name="speed" id="sp05" value="0.5"><label for="sp05">0.5×</label>
       <input type="radio" name="speed" id="sp1" value="1" checked><label for="sp1">1×</label>
@@ -6352,217 +6387,200 @@ const VOICE_DEFAULT = { on: true, lang: 'auto', voice: 'alto', vol: 1, delay: 1.
 const VOICE_HOST = 'https://synthesis-service.scratch.mit.edu';
 
 // ---------------------------------------------------------------- the lines
-// {I}: intensity, {M}: magnitude, {D}: depth, {R}: region, {A}: areas, {n}: number, {k}: class
+// Modeled on what JMA viewer apps say (a Noto recording: "石川県能登地方で地震、推定最大震度6弱", "群馬、新潟、富山、石川、
+// 長野、岐阜では強い揺れに警戒してください", "震度速報。最大震度6強を石川県で観測しました", "地震情報。午後4時10分ごろ…").
+// {I}: intensity, {M}: magnitude, {D}: depth, {R}: region, {A}: areas, {T}: clock time, {k}: class, {n}: number,
+// {N}: a tsunami warning's name, {H}: wave height
 const VOICE_TEXT = {
   ja: {
     I: (i) => '震度' + SH_JP[i], depth: (d) => (d === 'shallow' ? 'ごく浅い' : d + 'キロ'), join: '、', more: 'など',
-    warn: '緊急地震速報です。強い揺れに警戒してください。', where: '震源は{R}です。',
-    warnMore: '緊急地震速報。{A}では強い揺れに警戒してください。',
-    special: '緊急地震速報の特別警報です。身の安全を確保してください。',
-    forecast: '緊急地震速報、予報です。{R}で地震。', fcMax: '予想最大震度は{I}です。',
-    single: '{R}で地震。震度は推定されていません。', plum: '{R}で揺れを検知しました。',
-    update: '第{n}報。マグニチュード{M}、予想最大震度{I}。', updateNoI: '第{n}報。マグニチュード{M}。',
-    cancel: '先ほどの緊急地震速報は取り消されました。',
+    T: (h, m) => (h < 12 ? '午前' : '午後') + (h % 12 || 12) + '時' + (m ? m + '分' : ''),
+    eq: '{R}で地震。', eqDetect: '{R}で地震を検知。', est: '推定最大{I}', estPlum: '最大{I}', estLp: '推定最大階級{k}', sep: '、', end: '。',
+    noEst: '震度推定なし。', climb: '最大{I}', warn: '{A}では強い揺れに警戒してください。', cancel: '先ほどの緊急地震速報はキャンセルされました。',
+    shake: '{R}で揺れを検出。', update: '第{n}報。マグニチュード{M}、推定最大{I}。', updateNoI: '第{n}報。マグニチュード{M}。',
     count: '揺れが来るまで、あと{n}秒。', arrive: '揺れが到達しました。',
-    flash: '震度速報です。{I}を観測したのは、{A}です。',
-    report: '震源・震度情報です。震源は{R}、震源の深さは{D}、地震の規模はマグニチュード{M}と推定されます。最大震度は{I}です。',
-    epicenter: '震源に関する情報です。震源は{R}、震源の深さは{D}、地震の規模はマグニチュード{M}と推定されます。',
-    tsuNone: 'この地震による津波の心配はありません。', tsuSlight: '若干の海面変動があるかもしれませんが、被害の心配はありません。', tsuOn: '現在、津波警報などが発表されています。',
-    tsu3: '大津波警報が発表されました。直ちに高台や避難ビルなど、安全な場所へ避難してください。',
-    tsu2: '津波警報が発表されました。直ちに海岸や川沿いから離れ、高台へ避難してください。',
-    tsu1: '津波注意報が発表されました。海の中にいる人は、直ちに海から上がって、海岸から離れてください。',
-    tsu0: '津波予報です。若干の海面変動が予想されますが、被害の心配はありません。',
-    lp: '長周期地震動に関する観測情報です。長周期地震動階級{k}を観測しました。',
-    sample: '緊急地震速報です。強い揺れに警戒してください。',
+    flash: '震度速報。最大{I}を{A}で観測しました。',
+    info: '地震情報。', infoWhen: '{T}ごろ、最大{I}を観測する地震がありました。', infoNoT: '最大{I}を観測する地震がありました。',
+    tsuOn: '現在、津波予報等を発表中です。', tsuNone: 'この地震による津波の心配はありません。', tsuSlight: '若干の海面変動があるかもしれませんが、被害の心配はありません。',
+    hypo: '震源地は{R}、震源の深さは{D}、地震の規模を示すマグニチュードは{M}と推定されています。',
+    obsMax: 'この地震で最大{I}を{A}で観測しました。', obsMore: 'また、{I}を{A}で観測しています。', epi: '震源に関する情報。',
+    tsuOpen: [null, '津波注意報が発表されました。', '津波警報が発表されました。直ちに避難してください。', '大津波警報が発表されました。直ちに避難してください。'],
+    tsuName: [null, '津波注意報', '津波警報', '大津波警報'], tsuList: '{N}が次の地域に発表されています。{A}。予想される津波の高さは{H}です。', also: 'また、',
+    tsuH: [null, '1メートル', '3メートル', '5メートル'], tsu0: '津波予報。若干の海面変動が予想されますが、被害の心配はありません。',
+    lp: '長周期地震動に関する観測情報。', lpWhen: '{T}ごろの地震により長周期地震動階級{k}を観測しました。', lpNoT: 'この地震により長周期地震動階級{k}を観測しました。',
+    lpObs: 'この地震で最大長周期地震動階級{k}を{A}で観測しました。',
+    sample: '石川県能登地方で地震。推定最大震度6弱。石川では強い揺れに警戒してください。',
   },
   en: {
     I: (i) => 'intensity ' + SH_EN[i].toLowerCase(), depth: (d) => (d === 'shallow' ? 'very shallow' : d + ' kilometers'), join: ', ', more: ', and others',
-    warn: 'Earthquake early warning. Strong shaking is expected. Take cover now.', where: 'Epicenter: {R}.',
-    warnMore: 'Early warning update. Strong shaking is now expected in {A}.',
-    special: 'Emergency earthquake warning. Severe shaking is expected. Protect yourself now.',
-    forecast: 'Earthquake early warning forecast. Epicenter: {R}.', fcMax: 'Maximum expected {I}.',
-    single: 'Earthquake near {R}. No intensity estimate yet.', plum: 'Shaking detected: {R}.',
-    update: 'Report {n}. Magnitude {M}, expected {I}.', updateNoI: 'Report {n}. Magnitude {M}.',
-    cancel: 'The earthquake early warning has been cancelled.',
+    T: (h, m) => `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`,
+    eq: 'Earthquake: {R}.', eqDetect: 'Earthquake detected: {R}.', est: 'Estimated maximum {I}', estPlum: 'Maximum {I}', estLp: 'long-period class {k}', sep: ', ', end: '.',
+    noEst: 'No intensity estimate.', climb: 'Now up to {I}', warn: 'Strong shaking is expected in {A}. Take cover.', cancel: 'The earthquake early warning has been cancelled.',
+    shake: 'Shaking detected: {R}.', update: 'Report {n}. Magnitude {M}, estimated maximum {I}.', updateNoI: 'Report {n}. Magnitude {M}.',
     count: 'Shaking arrives in {n} seconds.', arrive: 'Shaking is arriving now.',
     flash: 'Seismic intensity report. Maximum {I}, observed in {A}.',
-    report: 'Earthquake information. Epicenter: {R}. Depth: {D}. Magnitude {M}. The maximum was {I}.',
-    epicenter: 'Hypocenter information. Epicenter: {R}. Depth: {D}. Magnitude {M}.',
-    tsuNone: 'There is no threat of a tsunami.', tsuSlight: 'Slight sea level changes are possible, but no damage is expected.', tsuOn: 'Tsunami warnings are in effect.',
-    tsu3: 'A major tsunami warning has been issued. Evacuate to high ground immediately.',
-    tsu2: 'A tsunami warning has been issued. Move away from the coast and rivers, and head to high ground.',
-    tsu1: 'A tsunami advisory has been issued. Get out of the water and away from the shore.',
-    tsu0: 'Tsunami forecast. Slight sea level changes are expected, but no damage.',
-    lp: 'Long-period ground motion information. Class {k} was observed.',
-    sample: 'Earthquake early warning. Strong shaking is expected. Take cover now.',
+    info: 'Earthquake information.', infoWhen: 'At about {T}, an earthquake occurred with a maximum of {I}.', infoNoT: 'An earthquake occurred with a maximum of {I}.',
+    tsuOn: 'Tsunami warnings or advisories are in effect.', tsuNone: 'There is no threat of a tsunami.', tsuSlight: 'Slight sea level changes are possible, but no damage is expected.',
+    hypo: 'Epicenter: {R}. Depth: {D}. Estimated magnitude: {M}.',
+    obsMax: 'The maximum, {I}, was observed in {A}.', obsMore: '{I} was observed in {A}.', epi: 'Hypocenter information.',
+    tsuOpen: [null, 'A tsunami advisory has been issued.', 'A tsunami warning has been issued. Evacuate now.', 'A major tsunami warning has been issued. Evacuate now.'],
+    tsuName: [null, 'tsunami advisory', 'tsunami warning', 'major tsunami warning'], tsuList: 'A {N} is in effect for {A}. Waves up to {H} are expected.', also: '',
+    tsuH: [null, '1 meter', '3 meters', '5 meters'], tsu0: 'Tsunami forecast. Slight sea level changes are expected, but no damage.',
+    lp: 'Long-period ground motion information.', lpWhen: 'The earthquake at about {T} caused long-period ground motion of class {k}.', lpNoT: 'This earthquake caused long-period ground motion of class {k}.',
+    lpObs: 'The maximum, class {k}, was observed in {A}.',
+    sample: 'Earthquake: Noto, Ishikawa. Estimated maximum intensity 6 lower. Strong shaking is expected in Ishikawa. Take cover.',
   },
   zh: {
     I: (i) => '震度' + SH_JP[i].replace('強', '强'), depth: (d) => (d === 'shallow' ? '极浅' : d + '公里'), join: '、', more: '等地',
-    warn: '紧急地震速报。预计将有强烈摇晃，请注意防范。', where: '震源：{R}。',
-    warnMore: '紧急地震速报更新。{A}预计将有强烈摇晃，请注意防范。',
-    special: '紧急地震速报特别警报。预计将有剧烈摇晃，请立即确保自身安全。',
-    forecast: '紧急地震速报，预报。震源：{R}。', fcMax: '预计最大{I}。',
-    single: '震源：{R}。尚未推定震度。', plum: '{R}检测到摇晃。',
-    update: '第{n}报。震级{M}，预计最大{I}。', updateNoI: '第{n}报。震级{M}。',
-    cancel: '刚才的紧急地震速报已被取消。',
+    T: (h, m) => (h < 12 ? '上午' : '下午') + (h % 12 || 12) + '点' + (m ? m + '分' : ''),
+    eq: '{R}发生地震。', eqDetect: '{R}检测到地震。', est: '预计最大{I}', estPlum: '最大{I}', estLp: '预计长周期地震动最大{k}级', sep: '，', end: '。',
+    noEst: '尚未推定震度。', climb: '最大{I}', warn: '{A}请注意防范强烈摇晃。', cancel: '刚才的紧急地震速报已被取消。',
+    shake: '{R}检测到摇晃。', update: '第{n}报。震级{M}，预计最大{I}。', updateNoI: '第{n}报。震级{M}。',
     count: '距离摇晃到达还有{n}秒。', arrive: '摇晃已经到达。',
-    flash: '震度速报。在{A}观测到{I}。',
-    report: '震源与震度信息。震源：{R}，深度{D}，震级{M}。最大{I}。',
-    epicenter: '震源信息。震源：{R}，深度{D}，震级{M}。',
-    tsuNone: '此次地震不会引发海啸。', tsuSlight: '可能出现轻微海面变化，但无需担心受灾。', tsuOn: '目前已发布海啸警报等信息。',
-    tsu3: '已发布大海啸警报。请立即撤离到高地等安全地点。',
-    tsu2: '已发布海啸警报。请立即远离海岸和河流，前往高地。',
-    tsu1: '已发布海啸注意报。请立即离开海水，远离海岸。',
-    tsu0: '海啸预报。预计会有轻微海面变化，但无需担心受灾。',
-    lp: '长周期地震动观测信息。观测到{k}级长周期地震动。',
-    sample: '紧急地震速报。预计将有强烈摇晃，请注意防范。',
+    flash: '震度速报。在{A}观测到最大{I}。',
+    info: '地震信息。', infoWhen: '{T}左右，发生了最大{I}的地震。', infoNoT: '发生了最大{I}的地震。',
+    tsuOn: '目前已发布海啸预报等信息。', tsuNone: '此次地震不会引发海啸。', tsuSlight: '可能出现轻微海面变化，但无需担心受灾。',
+    hypo: '震源位于{R}，深度{D}，震级估计为{M}。',
+    obsMax: '此次地震在{A}观测到最大{I}。', obsMore: '另外，在{A}观测到{I}。', epi: '震源信息。',
+    tsuOpen: [null, '已发布海啸注意报。', '已发布海啸警报。请立即避难。', '已发布大海啸警报。请立即避难。'],
+    tsuName: [null, '海啸注意报', '海啸警报', '大海啸警报'], tsuList: '以下地区已发布{N}：{A}。预计海啸高度为{H}。', also: '另外，',
+    tsuH: [null, '1米', '3米', '5米'], tsu0: '海啸预报。预计会有轻微海面变化，但无需担心受灾。',
+    lp: '长周期地震动观测信息。', lpWhen: '{T}左右的地震观测到{k}级长周期地震动。', lpNoT: '此次地震观测到{k}级长周期地震动。',
+    lpObs: '此次地震在{A}观测到最大{k}级长周期地震动。',
+    sample: '石川县能登地方发生地震。预计最大震度6弱。石川请注意防范强烈摇晃。',
   },
   ko: {
     I: (i) => '진도 ' + SH_JP[i].replace('弱', '약').replace('強', '강'), depth: (d) => (d === 'shallow' ? '매우 얕음' : d + '킬로미터'), join: ', ', more: ' 등',
-    warn: '긴급지진속보입니다. 강한 흔들림에 주의하십시오.', where: '진원: {R}.',
-    warnMore: '긴급지진속보. 강한 흔들림 예상 지역 추가: {A}.',
-    special: '긴급지진속보 특별경보입니다. 즉시 몸을 보호하십시오.',
-    forecast: '긴급지진속보 예보입니다. 진원: {R}.', fcMax: '예상 최대 {I}.',
-    single: '진원: {R}. 진도는 아직 추정되지 않았습니다.', plum: '흔들림 감지: {R}.',
-    update: '제{n}보. 규모 {M}, 예상 최대 {I}.', updateNoI: '제{n}보. 규모 {M}.',
-    cancel: '앞서 발표된 긴급지진속보는 취소되었습니다.',
+    T: (h, m) => (h < 12 ? '오전 ' : '오후 ') + (h % 12 || 12) + '시' + (m ? ' ' + m + '분' : ''),
+    eq: '{R} 지진.', eqDetect: '{R} 지진 감지.', est: '추정 최대 {I}', estPlum: '최대 {I}', estLp: '추정 장주기 계급 {k}', sep: ', ', end: '.',
+    noEst: '진도 추정 없음.', climb: '최대 {I}', warn: '{A}에서는 강한 흔들림에 경계하십시오.', cancel: '앞서 발표된 긴급지진속보는 취소되었습니다.',
+    shake: '{R} 흔들림 감지.', update: '제{n}보. 규모 {M}, 추정 최대 {I}.', updateNoI: '제{n}보. 규모 {M}.',
     count: '흔들림 도달까지 {n}초.', arrive: '흔들림이 도달했습니다.',
-    flash: '진도 속보입니다. 최대 {I}, 관측 지역: {A}.',
-    report: '지진 정보입니다. 진원: {R}. 깊이 {D}. 규모 {M}. 최대 {I}.',
-    epicenter: '진원 정보입니다. 진원: {R}. 깊이 {D}. 규모 {M}.',
-    tsuNone: '이 지진으로 인한 쓰나미 걱정은 없습니다.', tsuSlight: '약간의 해수면 변동이 있을 수 있지만 피해 걱정은 없습니다.', tsuOn: '현재 쓰나미 경보 등이 발표되어 있습니다.',
-    tsu3: '대형 쓰나미 경보가 발표되었습니다. 즉시 높은 곳으로 대피하십시오.',
-    tsu2: '쓰나미 경보가 발표되었습니다. 즉시 해안과 강가에서 벗어나 높은 곳으로 대피하십시오.',
-    tsu1: '쓰나미 주의보가 발표되었습니다. 바다에서 즉시 나와 해안에서 떨어지십시오.',
-    tsu0: '쓰나미 예보입니다. 약간의 해수면 변동이 예상되지만 피해 걱정은 없습니다.',
-    lp: '장주기 지진동 관측 정보입니다. 계급 {k}이 관측되었습니다.',
-    sample: '긴급지진속보입니다. 강한 흔들림에 주의하십시오.',
+    flash: '진도 속보. 최대 {I}, 관측 지역: {A}.',
+    info: '지진 정보.', infoWhen: '{T}경, 최대 {I}의 지진이 발생했습니다.', infoNoT: '최대 {I}의 지진이 발생했습니다.',
+    tsuOn: '현재 쓰나미 예보 등이 발표 중입니다.', tsuNone: '이 지진으로 인한 쓰나미 걱정은 없습니다.', tsuSlight: '약간의 해수면 변동이 있을 수 있지만 피해 걱정은 없습니다.',
+    hypo: '진원: {R}. 깊이 {D}. 규모는 {M}로 추정됩니다.',
+    obsMax: '이 지진으로 최대 {I}, 관측 지역: {A}.', obsMore: '또한 {I}, 관측 지역: {A}.', epi: '진원 정보.',
+    tsuOpen: [null, '쓰나미 주의보가 발표되었습니다.', '쓰나미 경보가 발표되었습니다. 즉시 대피하십시오.', '대형 쓰나미 경보가 발표되었습니다. 즉시 대피하십시오.'],
+    tsuName: [null, '쓰나미 주의보', '쓰나미 경보', '대형 쓰나미 경보'], tsuList: '{N} 발표 지역: {A}. 예상 쓰나미 높이는 {H}입니다.', also: '또한 ',
+    tsuH: [null, '1미터', '3미터', '5미터'], tsu0: '쓰나미 예보. 약간의 해수면 변동이 예상되지만 피해 걱정은 없습니다.',
+    lp: '장주기 지진동 관측 정보.', lpWhen: '{T}경 지진으로 장주기 지진동 계급 {k}이 관측되었습니다.', lpNoT: '이 지진으로 장주기 지진동 계급 {k}이 관측되었습니다.',
+    lpObs: '최대 계급 {k}, 관측 지역: {A}.',
+    sample: 'Ishikawa 지진. 추정 최대 진도 6약. Ishikawa에서는 강한 흔들림에 경계하십시오.',
   },
   es: {
     I: (i) => 'intensidad ' + shWords(i, 'inferior', 'superior'), depth: (d) => (d === 'shallow' ? 'muy superficial' : d + ' kilómetros'), join: ', ', more: ' y otras zonas',
-    warn: 'Alerta sísmica temprana. Se esperan sacudidas fuertes. Protéjase ahora.', where: 'Epicentro: {R}.',
-    warnMore: 'Actualización de la alerta. Se esperan sacudidas fuertes también en {A}.',
-    special: 'Alerta sísmica de emergencia. Se esperan sacudidas muy fuertes. Protéjase de inmediato.',
-    forecast: 'Aviso sísmico temprano. Epicentro: {R}.', fcMax: 'Máxima prevista: {I}.',
-    single: 'Epicentro: {R}. Aún no hay estimación de intensidad.', plum: 'Sacudidas detectadas: {R}.',
-    update: 'Informe {n}. Magnitud {M}, {I} prevista.', updateNoI: 'Informe {n}. Magnitud {M}.',
-    cancel: 'La alerta sísmica temprana ha sido cancelada.',
+    T: (h, m) => `las ${h}:${String(m).padStart(2, '0')}`,
+    eq: 'Sismo: {R}.', eqDetect: 'Sismo detectado: {R}.', est: 'Máxima estimada: {I}', estPlum: 'Máxima: {I}', estLp: 'período largo clase {k}', sep: ', ', end: '.',
+    noEst: 'Sin estimación de intensidad.', climb: 'Ahora hasta {I}', warn: 'Se esperan sacudidas fuertes en {A}. Protéjase.', cancel: 'La alerta sísmica temprana ha sido cancelada.',
+    shake: 'Sacudidas detectadas: {R}.', update: 'Informe {n}. Magnitud {M}, máxima estimada {I}.', updateNoI: 'Informe {n}. Magnitud {M}.',
     count: 'Las sacudidas llegan en {n} segundos.', arrive: 'Las sacudidas están llegando.',
-    flash: 'Informe de intensidad sísmica. {I}, observada en {A}.',
-    report: 'Información del sismo. Epicentro: {R}. Profundidad: {D}. Magnitud {M}. Máxima: {I}.',
-    epicenter: 'Información del hipocentro. Epicentro: {R}. Profundidad: {D}. Magnitud {M}.',
-    tsuNone: 'No hay riesgo de tsunami.', tsuSlight: 'Puede haber ligeros cambios en el nivel del mar, sin riesgo de daños.', tsuOn: 'Hay alertas de tsunami en vigor.',
-    tsu3: 'Se ha emitido una alerta de tsunami mayor. Evacúe a zonas altas de inmediato.',
-    tsu2: 'Se ha emitido una alerta de tsunami. Aléjese de la costa y de los ríos, y diríjase a zonas altas.',
-    tsu1: 'Se ha emitido un aviso de tsunami. Salga del agua y aléjese de la orilla.',
-    tsu0: 'Pronóstico de tsunami. Se esperan ligeros cambios en el nivel del mar, sin daños.',
-    lp: 'Información de movimiento de período largo. Se observó la clase {k}.',
-    sample: 'Alerta sísmica temprana. Se esperan sacudidas fuertes. Protéjase ahora.',
+    flash: 'Informe de intensidad sísmica. Máxima {I}, observada en {A}.',
+    info: 'Información sísmica.', infoWhen: 'Hacia {T} ocurrió un sismo de {I} como máximo.', infoNoT: 'Ocurrió un sismo de {I} como máximo.',
+    tsuOn: 'Hay avisos de tsunami en vigor.', tsuNone: 'No hay riesgo de tsunami.', tsuSlight: 'Puede haber ligeros cambios en el nivel del mar, sin riesgo de daños.',
+    hypo: 'Epicentro: {R}. Profundidad: {D}. Magnitud estimada: {M}.',
+    obsMax: 'La máxima, {I}, se observó en {A}.', obsMore: 'Se observó {I} en {A}.', epi: 'Información del hipocentro.',
+    tsuOpen: [null, 'Se ha emitido un aviso de tsunami.', 'Se ha emitido una alerta de tsunami. Evacúe ahora.', 'Se ha emitido una alerta de tsunami mayor. Evacúe ahora.'],
+    tsuName: [null, 'aviso de tsunami', 'alerta de tsunami', 'alerta de tsunami mayor'], tsuList: 'Hay un {N} para {A}. Se esperan olas de hasta {H}.', also: '',
+    tsuH: [null, '1 metro', '3 metros', '5 metros'], tsu0: 'Pronóstico de tsunami. Se esperan ligeros cambios en el nivel del mar, sin daños.',
+    lp: 'Información de movimiento de período largo.', lpWhen: 'El sismo de {T} causó movimiento de período largo de clase {k}.', lpNoT: 'Este sismo causó movimiento de período largo de clase {k}.',
+    lpObs: 'La máxima, clase {k}, se observó en {A}.',
+    sample: 'Sismo: Noto, Ishikawa. Máxima estimada: intensidad 6 inferior. Se esperan sacudidas fuertes en Ishikawa. Protéjase.',
   },
   pt: {
     I: (i) => 'intensidade ' + shWords(i, 'inferior', 'superior'), depth: (d) => (d === 'shallow' ? 'muito rasa' : d + ' quilômetros'), join: ', ', more: ' e outras áreas',
-    warn: 'Alerta antecipado de terremoto. São esperados tremores fortes. Proteja-se agora.', where: 'Epicentro: {R}.',
-    warnMore: 'Atualização do alerta. Tremores fortes também são esperados em {A}.',
-    special: 'Alerta de emergência de terremoto. São esperados tremores muito fortes. Proteja-se imediatamente.',
-    forecast: 'Aviso antecipado de terremoto. Epicentro: {R}.', fcMax: 'Máxima prevista: {I}.',
-    single: 'Epicentro: {R}. Ainda sem estimativa de intensidade.', plum: 'Tremor detectado: {R}.',
-    update: 'Boletim {n}. Magnitude {M}, {I} prevista.', updateNoI: 'Boletim {n}. Magnitude {M}.',
-    cancel: 'O alerta antecipado de terremoto foi cancelado.',
+    T: (h, m) => `às ${h}:${String(m).padStart(2, '0')}`,
+    eq: 'Terremoto: {R}.', eqDetect: 'Terremoto detectado: {R}.', est: 'Máxima estimada: {I}', estPlum: 'Máxima: {I}', estLp: 'longo período classe {k}', sep: ', ', end: '.',
+    noEst: 'Sem estimativa de intensidade.', climb: 'Agora até {I}', warn: 'São esperados tremores fortes em {A}. Proteja-se.', cancel: 'O alerta antecipado de terremoto foi cancelado.',
+    shake: 'Tremor detectado: {R}.', update: 'Boletim {n}. Magnitude {M}, máxima estimada {I}.', updateNoI: 'Boletim {n}. Magnitude {M}.',
     count: 'O tremor chega em {n} segundos.', arrive: 'O tremor está chegando.',
-    flash: 'Boletim de intensidade sísmica. {I}, observada em {A}.',
-    report: 'Informações do terremoto. Epicentro: {R}. Profundidade: {D}. Magnitude {M}. Máxima: {I}.',
-    epicenter: 'Informações do hipocentro. Epicentro: {R}. Profundidade: {D}. Magnitude {M}.',
-    tsuNone: 'Não há risco de tsunami.', tsuSlight: 'Pode haver pequenas variações no nível do mar, sem risco de danos.', tsuOn: 'Há alertas de tsunami em vigor.',
-    tsu3: 'Foi emitido um alerta de grande tsunami. Evacue imediatamente para áreas altas.',
-    tsu2: 'Foi emitido um alerta de tsunami. Afaste-se da costa e dos rios e vá para áreas altas.',
-    tsu1: 'Foi emitido um aviso de tsunami. Saia da água e afaste-se da praia.',
-    tsu0: 'Previsão de tsunami. São esperadas pequenas variações no nível do mar, sem danos.',
-    lp: 'Informação de movimento de longo período. Foi observada a classe {k}.',
-    sample: 'Alerta antecipado de terremoto. São esperados tremores fortes. Proteja-se agora.',
+    flash: 'Boletim de intensidade sísmica. Máxima {I}, observada em {A}.',
+    info: 'Informação sísmica.', infoWhen: 'Por volta das {T}, ocorreu um terremoto de {I} no máximo.', infoNoT: 'Ocorreu um terremoto de {I} no máximo.',
+    tsuOn: 'Há alertas de tsunami em vigor.', tsuNone: 'Não há risco de tsunami.', tsuSlight: 'Pode haver pequenas variações no nível do mar, sem risco de danos.',
+    hypo: 'Epicentro: {R}. Profundidade: {D}. Magnitude estimada: {M}.',
+    obsMax: 'A máxima, {I}, foi observada em {A}.', obsMore: '{I} foi observada em {A}.', epi: 'Informação do hipocentro.',
+    tsuOpen: [null, 'Foi emitido um aviso de tsunami.', 'Foi emitido um alerta de tsunami. Evacue agora.', 'Foi emitido um alerta de grande tsunami. Evacue agora.'],
+    tsuName: [null, 'aviso de tsunami', 'alerta de tsunami', 'alerta de grande tsunami'], tsuList: 'Há um {N} para {A}. São esperadas ondas de até {H}.', also: '',
+    tsuH: [null, '1 metro', '3 metros', '5 metros'], tsu0: 'Previsão de tsunami. São esperadas pequenas variações no nível do mar, sem danos.',
+    lp: 'Informação de movimento de longo período.', lpWhen: 'O terremoto das {T} causou movimento de longo período de classe {k}.', lpNoT: 'Este terremoto causou movimento de longo período de classe {k}.',
+    lpObs: 'A máxima, classe {k}, foi observada em {A}.',
+    sample: 'Terremoto: Noto, Ishikawa. Máxima estimada: intensidade 6 inferior. São esperados tremores fortes em Ishikawa. Proteja-se.',
   },
   fr: {
     I: (i) => 'intensité ' + shWords(i, 'inférieur', 'supérieur'), depth: (d) => (d === 'shallow' ? 'très superficielle' : d + ' kilomètres'), join: ', ', more: ' et ailleurs',
-    warn: 'Alerte sismique précoce. De fortes secousses sont attendues. Mettez-vous à l’abri.', where: 'Épicentre : {R}.',
-    warnMore: 'Mise à jour de l’alerte. De fortes secousses sont désormais attendues à {A}.',
-    special: 'Alerte sismique d’urgence. De très fortes secousses sont attendues. Protégez-vous immédiatement.',
-    forecast: 'Avis sismique précoce. Épicentre : {R}.', fcMax: 'Maximum prévu : {I}.',
-    single: 'Épicentre : {R}. Pas encore d’estimation d’intensité.', plum: 'Secousses détectées : {R}.',
-    update: 'Bulletin {n}. Magnitude {M}, {I} prévue.', updateNoI: 'Bulletin {n}. Magnitude {M}.',
-    cancel: 'L’alerte sismique précoce a été annulée.',
+    T: (h, m) => `${h} h ${String(m).padStart(2, '0')}`,
+    eq: 'Séisme : {R}.', eqDetect: 'Séisme détecté : {R}.', est: 'Maximum estimé : {I}', estPlum: 'Maximum : {I}', estLp: 'longue période classe {k}', sep: ', ', end: '.',
+    noEst: 'Pas d’estimation d’intensité.', climb: 'Désormais jusqu’à {I}', warn: 'De fortes secousses sont attendues à {A}. Mettez-vous à l’abri.', cancel: 'L’alerte sismique précoce a été annulée.',
+    shake: 'Secousses détectées : {R}.', update: 'Bulletin {n}. Magnitude {M}, maximum estimé {I}.', updateNoI: 'Bulletin {n}. Magnitude {M}.',
     count: 'Les secousses arrivent dans {n} secondes.', arrive: 'Les secousses arrivent.',
-    flash: 'Bulletin d’intensité sismique. {I}, observée à {A}.',
-    report: 'Informations sur le séisme. Épicentre : {R}. Profondeur : {D}. Magnitude {M}. Maximum : {I}.',
-    epicenter: 'Informations sur l’hypocentre. Épicentre : {R}. Profondeur : {D}. Magnitude {M}.',
-    tsuNone: 'Aucun risque de tsunami.', tsuSlight: 'De légères variations du niveau de la mer sont possibles, sans risque de dégâts.', tsuOn: 'Des alertes au tsunami sont en vigueur.',
-    tsu3: 'Une alerte majeure au tsunami a été émise. Évacuez immédiatement vers les hauteurs.',
-    tsu2: 'Une alerte au tsunami a été émise. Éloignez-vous de la côte et des rivières, et rejoignez les hauteurs.',
-    tsu1: 'Un avis de tsunami a été émis. Sortez de l’eau et éloignez-vous du rivage.',
-    tsu0: 'Prévision de tsunami. De légères variations du niveau de la mer sont attendues, sans dégâts.',
-    lp: 'Information sur les mouvements de longue période. Classe {k} observée.',
-    sample: 'Alerte sismique précoce. De fortes secousses sont attendues. Mettez-vous à l’abri.',
+    flash: 'Bulletin d’intensité sismique. Maximum {I}, observé à {A}.',
+    info: 'Information sismique.', infoWhen: 'Vers {T}, un séisme d’{I} au maximum s’est produit.', infoNoT: 'Un séisme d’{I} au maximum s’est produit.',
+    tsuOn: 'Des alertes au tsunami sont en vigueur.', tsuNone: 'Aucun risque de tsunami.', tsuSlight: 'De légères variations du niveau de la mer sont possibles, sans dégâts.',
+    hypo: 'Épicentre : {R}. Profondeur : {D}. Magnitude estimée : {M}.',
+    obsMax: 'Le maximum, {I}, a été observé à {A}.', obsMore: '{I} a été observée à {A}.', epi: 'Information sur l’hypocentre.',
+    tsuOpen: [null, 'Un avis de tsunami a été émis.', 'Une alerte au tsunami a été émise. Évacuez maintenant.', 'Une alerte majeure au tsunami a été émise. Évacuez maintenant.'],
+    tsuName: [null, 'avis de tsunami', 'alerte au tsunami', 'alerte majeure au tsunami'], tsuList: '{N} en vigueur pour {A}. Vagues attendues jusqu’à {H}.', also: '',
+    tsuH: [null, '1 mètre', '3 mètres', '5 mètres'], tsu0: 'Prévision de tsunami. De légères variations du niveau de la mer sont attendues, sans dégâts.',
+    lp: 'Information sur les mouvements de longue période.', lpWhen: 'Le séisme de {T} a causé un mouvement de longue période de classe {k}.', lpNoT: 'Ce séisme a causé un mouvement de longue période de classe {k}.',
+    lpObs: 'Le maximum, classe {k}, a été observé à {A}.',
+    sample: 'Séisme : Noto, Ishikawa. Maximum estimé : intensité 6 inférieur. De fortes secousses sont attendues à Ishikawa. Mettez-vous à l’abri.',
   },
   de: {
     I: (i) => 'Intensität ' + shWords(i, 'schwach', 'stark'), depth: (d) => (d === 'shallow' ? 'sehr flach' : d + ' Kilometer'), join: ', ', more: ' und weiteren Gebieten',
-    warn: 'Erdbebenfrühwarnung. Starke Erschütterungen werden erwartet. Bringen Sie sich in Sicherheit.', where: 'Epizentrum: {R}.',
-    warnMore: 'Aktualisierte Warnung. Starke Erschütterungen werden jetzt auch in {A} erwartet.',
-    special: 'Erdbeben-Notfallwarnung. Sehr starke Erschütterungen werden erwartet. Schützen Sie sich sofort.',
-    forecast: 'Erdbebenfrühwarnung, Vorhersage. Epizentrum: {R}.', fcMax: 'Erwartet: bis {I}.',
-    single: 'Epizentrum: {R}. Noch keine Intensitätsschätzung.', plum: 'Erschütterungen erkannt: {R}.',
-    update: 'Meldung {n}. Magnitude {M}, erwartet {I}.', updateNoI: 'Meldung {n}. Magnitude {M}.',
-    cancel: 'Die Erdbebenfrühwarnung wurde aufgehoben.',
+    T: (h, m) => `${h}:${String(m).padStart(2, '0')} Uhr`,
+    eq: 'Erdbeben: {R}.', eqDetect: 'Erdbeben erkannt: {R}.', est: 'Geschätztes Maximum: {I}', estPlum: 'Maximum: {I}', estLp: 'langperiodisch Klasse {k}', sep: ', ', end: '.',
+    noEst: 'Keine Intensitätsschätzung.', climb: 'Jetzt bis {I}', warn: 'Starke Erschütterungen werden in {A} erwartet. Bringen Sie sich in Sicherheit.', cancel: 'Die Erdbebenfrühwarnung wurde aufgehoben.',
+    shake: 'Erschütterungen erkannt: {R}.', update: 'Meldung {n}. Magnitude {M}, geschätztes Maximum {I}.', updateNoI: 'Meldung {n}. Magnitude {M}.',
     count: 'Die Erschütterungen erreichen Sie in {n} Sekunden.', arrive: 'Die Erschütterungen treffen jetzt ein.',
-    flash: 'Meldung zur seismischen Intensität. {I}, beobachtet in {A}.',
-    report: 'Erdbebeninformation. Epizentrum: {R}. Tiefe: {D}. Magnitude {M}. Maximal {I}.',
-    epicenter: 'Information zum Erdbebenherd. Epizentrum: {R}. Tiefe: {D}. Magnitude {M}.',
-    tsuNone: 'Es besteht keine Tsunamigefahr.', tsuSlight: 'Leichte Meeresspiegelschwankungen sind möglich, Schäden sind nicht zu erwarten.', tsuOn: 'Es gelten Tsunamiwarnungen.',
-    tsu3: 'Eine große Tsunamiwarnung wurde ausgegeben. Begeben Sie sich sofort auf höher gelegenes Gelände.',
-    tsu2: 'Eine Tsunamiwarnung wurde ausgegeben. Entfernen Sie sich von der Küste und von Flüssen und suchen Sie höheres Gelände auf.',
-    tsu1: 'Ein Tsunamihinweis wurde ausgegeben. Verlassen Sie das Wasser und entfernen Sie sich vom Ufer.',
-    tsu0: 'Tsunamivorhersage. Leichte Meeresspiegelschwankungen werden erwartet, ohne Schäden.',
-    lp: 'Information zu langperiodischen Bodenbewegungen. Klasse {k} wurde beobachtet.',
-    sample: 'Erdbebenfrühwarnung. Starke Erschütterungen werden erwartet. Bringen Sie sich in Sicherheit.',
+    flash: 'Meldung zur seismischen Intensität. Maximal {I}, beobachtet in {A}.',
+    info: 'Erdbebeninformation.', infoWhen: 'Gegen {T} ereignete sich ein Erdbeben mit maximal {I}.', infoNoT: 'Es ereignete sich ein Erdbeben mit maximal {I}.',
+    tsuOn: 'Es gelten Tsunamiwarnungen.', tsuNone: 'Es besteht keine Tsunamigefahr.', tsuSlight: 'Leichte Meeresspiegelschwankungen sind möglich, Schäden sind nicht zu erwarten.',
+    hypo: 'Epizentrum: {R}. Tiefe: {D}. Geschätzte Magnitude: {M}.',
+    obsMax: 'Das Maximum, {I}, wurde in {A} beobachtet.', obsMore: '{I} wurde in {A} beobachtet.', epi: 'Information zum Erdbebenherd.',
+    tsuOpen: [null, 'Ein Tsunamihinweis wurde ausgegeben.', 'Eine Tsunamiwarnung wurde ausgegeben. Bringen Sie sich jetzt in Sicherheit.', 'Eine große Tsunamiwarnung wurde ausgegeben. Bringen Sie sich jetzt in Sicherheit.'],
+    tsuName: [null, 'Tsunamihinweis', 'Tsunamiwarnung', 'große Tsunamiwarnung'], tsuList: '{N} für {A}. Erwartet werden Wellen bis {H}.', also: '',
+    tsuH: [null, '1 Meter', '3 Meter', '5 Meter'], tsu0: 'Tsunamivorhersage. Leichte Meeresspiegelschwankungen werden erwartet, ohne Schäden.',
+    lp: 'Information zu langperiodischen Bodenbewegungen.', lpWhen: 'Das Erdbeben gegen {T} verursachte langperiodische Bodenbewegung der Klasse {k}.', lpNoT: 'Dieses Erdbeben verursachte langperiodische Bodenbewegung der Klasse {k}.',
+    lpObs: 'Das Maximum, Klasse {k}, wurde in {A} beobachtet.',
+    sample: 'Erdbeben: Noto, Ishikawa. Geschätztes Maximum: Intensität 6 schwach. Starke Erschütterungen werden in Ishikawa erwartet. Bringen Sie sich in Sicherheit.',
   },
   it: {
     I: (i) => 'intensità ' + shWords(i, 'inferiore', 'superiore'), depth: (d) => (d === 'shallow' ? 'molto superficiale' : d + ' chilometri'), join: ', ', more: ' e altre zone',
-    warn: 'Allerta sismica precoce. Sono attese forti scosse. Mettetevi al riparo.', where: 'Epicentro: {R}.',
-    warnMore: 'Aggiornamento dell’allerta. Forti scosse sono ora attese anche a {A}.',
-    special: 'Allerta sismica di emergenza. Sono attese scosse molto forti. Proteggetevi subito.',
-    forecast: 'Avviso sismico precoce. Epicentro: {R}.', fcMax: 'Massima prevista: {I}.',
-    single: 'Epicentro: {R}. Nessuna stima dell’intensità per ora.', plum: 'Scosse rilevate: {R}.',
-    update: 'Bollettino {n}. Magnitudo {M}, {I} prevista.', updateNoI: 'Bollettino {n}. Magnitudo {M}.',
-    cancel: 'L’allerta sismica precoce è stata annullata.',
+    T: (h, m) => `alle ${h}:${String(m).padStart(2, '0')}`,
+    eq: 'Terremoto: {R}.', eqDetect: 'Terremoto rilevato: {R}.', est: 'Massima stimata: {I}', estPlum: 'Massima: {I}', estLp: 'lungo periodo classe {k}', sep: ', ', end: '.',
+    noEst: 'Nessuna stima dell’intensità.', climb: 'Ora fino a {I}', warn: 'Sono attese forti scosse a {A}. Mettetevi al riparo.', cancel: 'L’allerta sismica precoce è stata annullata.',
+    shake: 'Scosse rilevate: {R}.', update: 'Bollettino {n}. Magnitudo {M}, massima stimata {I}.', updateNoI: 'Bollettino {n}. Magnitudo {M}.',
     count: 'Le scosse arrivano tra {n} secondi.', arrive: 'Le scosse stanno arrivando.',
-    flash: 'Bollettino di intensità sismica. {I}, osservata a {A}.',
-    report: 'Informazioni sul terremoto. Epicentro: {R}. Profondità: {D}. Magnitudo {M}. Massima: {I}.',
-    epicenter: 'Informazioni sull’ipocentro. Epicentro: {R}. Profondità: {D}. Magnitudo {M}.',
-    tsuNone: 'Non c’è pericolo di tsunami.', tsuSlight: 'Sono possibili lievi variazioni del livello del mare, senza danni.', tsuOn: 'Sono in vigore allerte tsunami.',
-    tsu3: 'È stata emessa un’allerta tsunami grave. Evacuate subito verso zone elevate.',
-    tsu2: 'È stata emessa un’allerta tsunami. Allontanatevi dalla costa e dai fiumi e raggiungete zone elevate.',
-    tsu1: 'È stato emesso un avviso di tsunami. Uscite dall’acqua e allontanatevi dalla riva.',
-    tsu0: 'Previsione tsunami. Sono attese lievi variazioni del livello del mare, senza danni.',
-    lp: 'Informazioni sul moto del suolo a lungo periodo. Osservata la classe {k}.',
-    sample: 'Allerta sismica precoce. Sono attese forti scosse. Mettetevi al riparo.',
+    flash: 'Bollettino di intensità sismica. Massima {I}, osservata a {A}.',
+    info: 'Informazioni sismiche.', infoWhen: 'Intorno {T} si è verificato un terremoto di {I} al massimo.', infoNoT: 'Si è verificato un terremoto di {I} al massimo.',
+    tsuOn: 'Sono in vigore allerte tsunami.', tsuNone: 'Non c’è pericolo di tsunami.', tsuSlight: 'Sono possibili lievi variazioni del livello del mare, senza danni.',
+    hypo: 'Epicentro: {R}. Profondità: {D}. Magnitudo stimata: {M}.',
+    obsMax: 'La massima, {I}, è stata osservata a {A}.', obsMore: '{I} è stata osservata a {A}.', epi: 'Informazioni sull’ipocentro.',
+    tsuOpen: [null, 'È stato emesso un avviso di tsunami.', 'È stata emessa un’allerta tsunami. Evacuate subito.', 'È stata emessa un’allerta tsunami grave. Evacuate subito.'],
+    tsuName: [null, 'avviso di tsunami', 'allerta tsunami', 'allerta tsunami grave'], tsuList: '{N} in vigore per {A}. Onde attese fino a {H}.', also: '',
+    tsuH: [null, '1 metro', '3 metri', '5 metri'], tsu0: 'Previsione tsunami. Sono attese lievi variazioni del livello del mare, senza danni.',
+    lp: 'Informazioni sul moto del suolo a lungo periodo.', lpWhen: 'Il terremoto delle {T} ha causato moto a lungo periodo di classe {k}.', lpNoT: 'Questo terremoto ha causato moto a lungo periodo di classe {k}.',
+    lpObs: 'La massima, classe {k}, è stata osservata a {A}.',
+    sample: 'Terremoto: Noto, Ishikawa. Massima stimata: intensità 6 inferiore. Sono attese forti scosse a Ishikawa. Mettetevi al riparo.',
   },
   ru: {
     I: (i) => 'интенсивность ' + shWords(i, 'минус', 'плюс'), depth: (d) => (d === 'shallow' ? 'очень малая' : d + ' км'), join: ', ', more: ' и других районах',
-    warn: 'Раннее предупреждение о землетрясении. Ожидаются сильные толчки. Немедленно укройтесь.', where: 'Эпицентр: {R}.',
-    warnMore: 'Обновление предупреждения. Сильные толчки ожидаются также: {A}.',
-    special: 'Экстренное предупреждение о землетрясении. Ожидаются очень сильные толчки. Немедленно защитите себя.',
-    forecast: 'Раннее оповещение о землетрясении. Эпицентр: {R}.', fcMax: 'Ожидается {I}.',
-    single: 'Эпицентр: {R}. Оценки интенсивности пока нет.', plum: 'Обнаружены толчки: {R}.',
-    update: 'Сообщение {n}. Магнитуда {M}, ожидается {I}.', updateNoI: 'Сообщение {n}. Магнитуда {M}.',
-    cancel: 'Раннее предупреждение о землетрясении отменено.',
+    T: (h, m) => `${h}:${String(m).padStart(2, '0')}`,
+    eq: 'Землетрясение: {R}.', eqDetect: 'Обнаружено землетрясение: {R}.', est: 'Ожидаемый максимум: {I}', estPlum: 'Максимум: {I}', estLp: 'длиннопериодные колебания класса {k}', sep: ', ', end: '.',
+    noEst: 'Оценки интенсивности нет.', climb: 'Теперь до {I}', warn: 'Сильные толчки ожидаются: {A}. Укройтесь.', cancel: 'Раннее предупреждение о землетрясении отменено.',
+    shake: 'Обнаружены толчки: {R}.', update: 'Сообщение {n}. Магнитуда {M}, ожидается {I}.', updateNoI: 'Сообщение {n}. Магнитуда {M}.',
     count: 'Толчки дойдут через {n} секунд.', arrive: 'Толчки начинаются.',
-    flash: 'Сводка сейсмической интенсивности. {I} наблюдалась: {A}.',
-    report: 'Информация о землетрясении. Эпицентр: {R}. Глубина: {D}. Магнитуда {M}. Максимум: {I}.',
-    epicenter: 'Информация о гипоцентре. Эпицентр: {R}. Глубина: {D}. Магнитуда {M}.',
-    tsuNone: 'Угрозы цунами нет.', tsuSlight: 'Возможны небольшие колебания уровня моря, ущерба не ожидается.', tsuOn: 'Действуют предупреждения о цунами.',
-    tsu3: 'Объявлено предупреждение о крупном цунами. Немедленно эвакуируйтесь на возвышенность.',
-    tsu2: 'Объявлено предупреждение о цунами. Уйдите от побережья и рек и поднимитесь на возвышенность.',
-    tsu1: 'Объявлено уведомление о цунами. Выйдите из воды и отойдите от берега.',
-    tsu0: 'Прогноз цунами. Ожидаются небольшие колебания уровня моря без ущерба.',
-    lp: 'Информация о длиннопериодных колебаниях. Зарегистрирован класс {k}.',
-    sample: 'Раннее предупреждение о землетрясении. Ожидаются сильные толчки. Немедленно укройтесь.',
+    flash: 'Сводка сейсмической интенсивности. Максимум {I}, наблюдался: {A}.',
+    info: 'Информация о землетрясении.', infoWhen: 'Около {T} произошло землетрясение, максимум {I}.', infoNoT: 'Произошло землетрясение, максимум {I}.',
+    tsuOn: 'Действуют предупреждения о цунами.', tsuNone: 'Угрозы цунами нет.', tsuSlight: 'Возможны небольшие колебания уровня моря, ущерба не ожидается.',
+    hypo: 'Эпицентр: {R}. Глубина: {D}. Магнитуда около {M}.',
+    obsMax: 'Максимум, {I}, наблюдался: {A}.', obsMore: '{I} наблюдалась: {A}.', epi: 'Информация о гипоцентре.',
+    tsuOpen: [null, 'Объявлено уведомление о цунами.', 'Объявлено предупреждение о цунами. Немедленно эвакуируйтесь.', 'Объявлено предупреждение о крупном цунами. Немедленно эвакуируйтесь.'],
+    tsuName: [null, 'уведомление о цунами', 'предупреждение о цунами', 'предупреждение о крупном цунами'], tsuList: 'Действует {N}: {A}. Ожидаемая высота волн до {H}.', also: '',
+    tsuH: [null, '1 метра', '3 метров', '5 метров'], tsu0: 'Прогноз цунами. Ожидаются небольшие колебания уровня моря без ущерба.',
+    lp: 'Информация о длиннопериодных колебаниях.', lpWhen: 'Землетрясение около {T} вызвало длиннопериодные колебания класса {k}.', lpNoT: 'Это землетрясение вызвало длиннопериодные колебания класса {k}.',
+    lpObs: 'Максимум, класс {k}, наблюдался: {A}.',
+    sample: 'Землетрясение: Noto, Ishikawa. Ожидаемый максимум: интенсивность 6 минус. Сильные толчки ожидаются: Ishikawa. Укройтесь.',
   },
 };
 // "5 Lower" style levels for the languages that spell them out
@@ -6601,9 +6619,64 @@ function voiceLangOf(prefs) {
 const voiceNum = (lang, x) => (VOICE_LANGS[lang].dec === ',' ? String(x).replace('.', ',') : String(x));
 // the voice's name for a parent area (prefecture or state)
 function voiceParent(DB, lang, p) { const P = DB.parents[p]; return voicePlace(lang, P.c === 'JP' ? P.ja : '', P.en); }
-function voiceAreas(lang, names) {
-  const L = VOICE_TEXT[lang], list = names.slice(0, 4);
-  return list.join(L.join) + (names.length > 4 ? L.more : '');
+
+// JMA's warning wording names prefectures without 県/府 ("石川、富山では…"), and whole regions once the list is long
+// ("東北、関東、北陸、甲信、東海、近畿では…")
+const JP_REGIONS = [
+  ['hokkaido', ['北海道'], { ja: '北海道', en: 'Hokkaido', zh: '北海道', ko: '홋카이도' }],
+  ['tohoku', ['青森', '岩手', '宮城', '秋田', '山形', '福島'], { ja: '東北', en: 'Tohoku', zh: '东北', ko: '도호쿠' }],
+  ['kanto', ['茨城', '栃木', '群馬', '埼玉', '千葉', '東京', '神奈川'], { ja: '関東', en: 'Kanto', zh: '关东', ko: '간토' }],
+  ['hokuriku', ['新潟', '富山', '石川', '福井'], { ja: '北陸', en: 'Hokuriku', zh: '北陆', ko: '호쿠리쿠' }],
+  ['koshin', ['山梨', '長野'], { ja: '甲信', en: 'Koshin', zh: '甲信', ko: '고신' }],
+  ['tokai', ['岐阜', '静岡', '愛知', '三重'], { ja: '東海', en: 'Tokai', zh: '东海', ko: '도카이' }],
+  ['kinki', ['滋賀', '京都', '大阪', '兵庫', '奈良', '和歌山'], { ja: '近畿', en: 'Kinki', zh: '近畿', ko: '긴키' }],
+  ['chugoku', ['鳥取', '島根', '岡山', '広島', '山口'], { ja: '中国', en: 'Chugoku', zh: '中国地区', ko: '주고쿠' }],
+  ['shikoku', ['徳島', '香川', '愛媛', '高知'], { ja: '四国', en: 'Shikoku', zh: '四国', ko: '시코쿠' }],
+  ['kyushu', ['福岡', '佐賀', '長崎', '熊本', '大分', '宮崎', '鹿児島'], { ja: '九州', en: 'Kyushu', zh: '九州', ko: '규슈' }],
+  ['okinawa', ['沖縄'], { ja: '沖縄', en: 'Okinawa', zh: '冲绳', ko: '오키나와' }],
+];
+const prefShort = (ja) => (ja === '北海道' ? ja : String(ja || '').replace(/[都府県]$/, ''));
+function warnAreaNames(DB, lang, fresh, all) {
+  const jpOnly = all.every((p) => DB.parents[p].c === 'JP');
+  if (jpOnly && (fresh.length > 6 || all.length > 8)) {
+    const got = new Set(all.map((p) => prefShort(DB.parents[p].ja)));
+    return JP_REGIONS.filter(([, ps]) => ps.some((x) => got.has(x))).map(([, , nm]) => nm[lang] || nm.en);
+  }
+  return fresh.map((p) => {
+    const P = DB.parents[p];
+    if (P.c !== 'JP') return voicePlace(lang, '', P.en);
+    return lang === 'ja' ? prefShort(P.ja) : lang === 'zh' ? voicePlace('zh', prefShort(P.ja), '') : String(P.en || '').replace(/\s+Prefecture$/i, '');
+  });
+}
+// a list of places, as long as it needs to be for a warning or a report
+function voiceList(lang, names, max = 8) {
+  const L = VOICE_TEXT[lang], list = names.slice(0, max);
+  return list.join(L.join) + (names.length > max ? L.more : '');
+}
+// "午後4時10分" for a quake's origin, when the scenario runs on a set clock (a made-up quake starting "now"
+// changes time every play, which would make every line a new one to fetch)
+function voiceWhen(world, E, lang) {
+  const c = world.doc && world.doc.clock;
+  if (!c || c.mode !== 'custom' || !c.start) return '';
+  const t0 = wallToEpoch(c.start, world.tz);
+  if (!isFinite(t0)) return '';
+  const p = tzParts(t0 + E.ev.t0 * 1000, world.tz);
+  return VOICE_TEXT[lang].T(p.h, p.mi);
+}
+// tsunami areas by level, named in the voice's language
+function voiceTsunamiAreas(world, it, E, lang) {
+  const DB = world.DB, by = [[], [], [], []];
+  if (it.data.levels === 'manual') {
+    for (const [k, v] of Object.entries(it.data.manual || {})) {
+      if (!(v >= 1 && v <= 3)) continue;
+      if (k.startsWith('z:')) { const Z = TSU_ZONES.find((z) => z[0] === k.slice(2)); if (Z) by[v].push(voicePlace(lang, Z[2], Z[3])); }
+      else if (DB.parents[+k]) by[v].push(voiceParent(DB, lang, +k));
+    }
+    return by;
+  }
+  const T = tsunamiLevelsFor({ world }, it, E);
+  if (T.parLvl) T.parLvl.forEach((v, p) => { if (v >= 1 && v <= 3) by[v].push(voiceParent(DB, lang, p)); });
+  return by;
 }
 
 // what a box would say by itself ('' when it says nothing)
@@ -6617,28 +6690,53 @@ function voiceAutoFor(world, it, lang) {
   const M = () => voiceNum(lang, (it.data.M !== null && it.data.M !== undefined && it.data.M !== '' && isFinite(+it.data.M) ? +it.data.M : E.ph.M).toFixed(1));
   const D = () => { const d = it.data.depth; const v = d === 'shallow' ? 0 : d !== null && d !== undefined && d !== '' && isFinite(+d) ? +d : E.ph.depth; return L.depth(v < 5 ? 'shallow' : Math.round(v)); };
   const tsuLine = () => { if (!jp) return ''; const m = tsunamiMaxForEvent({ world }, E); return m >= 1 ? L.tsuOn : m === 0 ? L.tsuSlight : L.tsuNone; };
+  const when = voiceWhen(world, E, lang);
+  // the observed rows, strongest first, with a cap folding anything above it in
+  const rowsCapped = (cap) => {
+    flashRows({ world }, E);
+    const out = [];
+    for (const r of E.ph._flashRows || []) {
+      const idx = Math.min(r.idx, cap), last = out[out.length - 1];
+      if (last && last.idx === idx) last.ps = last.ps.concat(r.ps); else out.push({ idx, ps: r.ps.slice() });
+    }
+    return out;
+  };
+  const capOf = (v) => (v !== null && v !== undefined && v !== '' && isFinite(+v) ? +v : 99);
   switch (it.type) {
     case 'flash': {
-      flashRows({ world }, E);
-      const rows = E.ph._flashRows || [];
+      const rows = rowsCapped(capOf(it.data.cap));
       if (!rows.length) return '';
-      const cap = it.data.cap !== null && it.data.cap !== undefined && it.data.cap !== '' && isFinite(+it.data.cap) ? +it.data.cap : 99;
-      const top = Math.min(rows[0].idx, cap);
-      const ps = rows.filter((r) => Math.min(r.idx, cap) === top).flatMap((r) => r.ps);
-      return voiceFill(L.flash, { I: L.I(top), A: voiceAreas(lang, ps.map((p) => voiceParent(DB, lang, p))) });
+      return voiceFill(L.flash, { I: L.I(rows[0].idx), A: voiceList(lang, rows[0].ps.map((p) => voiceParent(DB, lang, p))) });
     }
     case 'report': {
-      const mo = it.data.maxOverride;
-      const mi = mo !== null && mo !== undefined && mo !== '' && isFinite(+mo) ? +mo : shIdx(E.ph.maxObs);
+      const rows = rowsCapped(capOf(it.data.maxOverride));
+      const mi = rows.length ? rows[0].idx : shIdx(E.ph.maxObs);
       if (mi < 0) return '';
-      return vcat(lang, voiceFill(L.report, { R: region, D: D(), M: M(), I: L.I(mi) }), tsuLine());
+      const parts = [L.info, voiceFill(when ? L.infoWhen : L.infoNoT, { T: when, I: L.I(mi) }), tsuLine(), voiceFill(L.hypo, { R: region, D: D(), M: M() })];
+      if (rows.length) parts.push(voiceFill(L.obsMax, { I: L.I(rows[0].idx), A: voiceList(lang, rows[0].ps.map((p) => voiceParent(DB, lang, p))) }));
+      if (rows[1] && rows[1].idx >= 3) parts.push(voiceFill(L.obsMore, { I: L.I(rows[1].idx), A: voiceList(lang, rows[1].ps.map((p) => voiceParent(DB, lang, p)), 6) }));
+      return vcat(lang, ...parts);
     }
-    case 'epicenter': return vcat(lang, voiceFill(L.epicenter, { R: region, D: D(), M: M() }), tsuLine());
+    case 'epicenter': return vcat(lang, L.epi, voiceFill(L.hypo, { R: region, D: D(), M: M() }), tsuLine());
     case 'tsunami': {
       const m = tsunamiLevelsFor({ world }, it, E).max;
-      return m >= 3 ? L.tsu3 : m === 2 ? L.tsu2 : m === 1 ? L.tsu1 : m === 0 ? L.tsu0 : '';
+      if (m === 0) return L.tsu0;
+      if (!(m >= 1)) return '';
+      const by = voiceTsunamiAreas(world, it, E, lang), parts = [L.tsuOpen[Math.min(3, m)]];
+      let first = true;
+      for (let v = 3; v >= 1; v--) {
+        if (!by[v].length) continue;
+        parts.push((first ? '' : L.also) + voiceFill(L.tsuList, { N: L.tsuName[v], A: voiceList(lang, by[v], 10), H: L.tsuH[v] }));
+        first = false;
+      }
+      return vcat(lang, ...parts);
     }
-    case 'longperiod': { const k = longPeriodFor(DB, E.ph).max; return k >= 1 ? voiceFill(L.lp, { k }) : ''; }
+    case 'longperiod': {
+      const LP = longPeriodFor(DB, E.ph), k = LP.max;
+      if (!(k >= 1)) return '';
+      const where = (LP.rows[k - 1] || []).map((p) => voiceParent(DB, lang, p));
+      return vcat(lang, L.lp, voiceFill(when ? L.lpWhen : L.lpNoT, { T: when, k }), where.length ? voiceFill(L.lpObs, { k, A: voiceList(lang, where) }) : '');
+    }
     case 'custom': {
       const d = it.data, t = String(d.title || '').split(/\s*[|｜]\s*/)[0], s = String(d.sub || '').trim();
       return [t, s].filter(Boolean).join(hasCJK(t) ? '。' : '. ');
@@ -6655,47 +6753,59 @@ function voiceLines(world, prefs) {
   if (!V.on || !world) return [];
   const lang = voiceLangOf(prefs), L = VOICE_TEXT[lang], out = [], dl = clamp(+V.delay || 0, 0, 5);
   const add = (t, text, late = 8, own = false) => {
-    if (!text || !String(text).trim()) return;
+    if (!text || !String(text).trim()) return null;
     // words someone typed are read in the language they're written in, as far as that can be told
     const tl = own ? textLang(String(text), lang) : lang;
-    out.push({ t: +t.toFixed(2), text: String(text).trim(), lang: tl, late });
+    let tx = String(text).trim();
+    // sentences start with a capital (the templates can put "intensity 4" first)
+    if (!own && !['ja', 'zh', 'ko'].includes(tl)) tx = tx.replace(/(^|[.!?]\s+)(\p{Ll})/gu, (m0, a, b) => a + b.toUpperCase());
+    const ln = { t: +t.toFixed(2), text: tx, lang: tl, late };
+    out.push(ln);
+    return ln;
   };
+  const DB = world.DB;
   for (const E of world.evs) {
     const region = voicePlace(lang, E.name.ja, E.name.en);
-    let special = false, saidWarn = false, lastEew = null;
-    const seen = new Float32Array(world.DB.parents.length).fill(-9);
-    // a new EEW line within a few seconds of the last one for the same quake replaces it (the first report, a
-    // warning and the emergency warning often land 1 or 2 seconds apart; saying all three would just pile up)
-    const eewLine = (t, text) => {
-      if (lastEew && t - lastEew.t < 5 && out.includes(lastEew)) out.splice(out.indexOf(lastEew), 1);
-      add(t, text);
-      lastEew = out[out.length - 1];
-    };
+    const seen = new Float32Array(DB.parents.length).fill(-9);
+    const warned = new Set();
+    let saidMax = -1, lastClimb = null;
+    if (V.eew && E.ph.shaking && !E.reports.length && E.ph.tDet !== null && E.ph.tDet !== undefined) add(E.ev.t0 + E.ph.tDet + dl, voiceFill(L.shake, { R: region }), 4);
     E.reports.forEach((r, k) => {
       if (r.kind === 'cancel') { if (V.cancel) add(r.t + dl, L.cancel); return; }
       const pr = reportPred(world, E, r), mi = pr ? pr.maxIdx : -1;
-      const best = pr ? parentBest(world.DB, E, pr) : null;
+      const best = pr ? parentBest(DB, E, pr) : null;
       // where strong shaking (5 Lower and up) is newly expected
       let fresh = best ? [...best.keys()].filter((p) => best[p] >= 4.5 && seen[p] < 3.5) : [];
       if (!fresh.length && best) fresh = [...best.keys()].filter((p) => best[p] >= 4.5 && seen[p] < 4.5);
       fresh.sort((a, b) => best[b] - best[a]);
       if (best) best.forEach((v, p) => { if (v > seen[p]) seen[p] = v; });
       if (!V.eew) { if (V.update && k > 0 && !r.assumed) add(r.t + dl, voiceFill(mi >= 0 ? L.update : L.updateNoI, { n: r._n || k + 1, M: voiceNum(lang, r.M.toFixed(1)), I: mi >= 0 ? L.I(mi) : '' }), 3); return; }
-      if (r.kind === 'warning' && mi >= 6 && !special) { special = true; saidWarn = true; eewLine(r.t + dl, vcat(lang, L.special, voiceFill(L.where, { R: region }))); return; }
-      if (r.kind === 'warning' && !saidWarn) { saidWarn = true; eewLine(r.t + dl, vcat(lang, L.warn, voiceFill(L.where, { R: region }))); return; }
-      if (r.kind === 'warning' && (r._issue || r._firstWarn)) {
-        // a follow-up warning: name where it's newly expected, or say it again
-        if (fresh.length) add(r.t + dl, voiceFill(L.warnMore, { A: voiceAreas(lang, fresh.map((p) => voiceParent(world.DB, lang, p))) }));
-        else add(r.t + dl, vcat(lang, L.warn, voiceFill(L.where, { R: region })));
-        return;
-      }
+      const lp = eewLpClass(E, r);
+      const estTxt = (plum) => voiceFill(plum ? L.estPlum : L.est, { I: L.I(mi) }) + (lp >= 1 && !plum ? L.sep + voiceFill(L.estLp, { k: lp }) : '') + L.end;
+      const parts = [];
       if (k === 0) {
-        if (r.assumed) eewLine(r.t + dl, voiceFill(L.plum, { R: region }));
-        else if (r.single) eewLine(r.t + dl, voiceFill(L.single, { R: region }));
-        else eewLine(r.t + dl, vcat(lang, voiceFill(L.forecast, { R: region }), mi >= 0 ? voiceFill(L.fcMax, { I: L.I(mi) }) : ''));
-        return;
+        // the first report: where, and how strong it's expected to get
+        parts.push(voiceFill(r.assumed ? L.eqDetect : L.eq, { R: region }));
+        if (r.single || mi < 0) parts.push(L.noEst); else parts.push(estTxt(r.assumed));
+        if (mi >= 0) saidMax = mi;
       }
-      if (V.update && !r.assumed) add(r.t + dl, voiceFill(mi >= 0 ? L.update : L.updateNoI, { n: r._n || k + 1, M: voiceNum(lang, r.M.toFixed(1)), I: mi >= 0 ? L.I(mi) : '' }), 3);
+      // a warning (or a follow-up that adds areas): where to brace
+      if (r.kind === 'warning' && (r._issue || r._firstWarn || !warned.size)) {
+        const pick = fresh.length ? fresh : best ? [...best.keys()].filter((p) => best[p] >= 4.5) : [];
+        for (const p of pick) warned.add(p);
+        const names = warnAreaNames(DB, lang, pick, [...warned]);
+        if (names.length) parts.push(voiceFill(L.warn, { A: voiceList(lang, names, 10) }));
+      }
+      // the forecast climbing: "最大震度7、推定最大階級2"
+      if (k > 0 && mi > saidMax && mi >= 0 && !r.single) {
+        saidMax = mi;
+        const txt = voiceFill(L.climb, { I: L.I(mi) }) + (lp >= 1 ? L.sep + voiceFill(L.estLp, { k: lp }) : '') + L.end;
+        // climbs a second or two apart: only the last one is worth saying
+        if (lastClimb && r.t + dl - lastClimb.t < 5 && out.includes(lastClimb)) out.splice(out.indexOf(lastClimb), 1);
+        if (parts.length) parts.push(txt); else { lastClimb = add(r.t + dl, txt); return; }
+      }
+      if (parts.length) add(r.t + dl, vcat(lang, ...parts));
+      else if (V.update && k > 0 && !r.assumed) add(r.t + dl, voiceFill(mi >= 0 ? L.update : L.updateNoI, { n: r._n || k + 1, M: voiceNum(lang, r.M.toFixed(1)), I: mi >= 0 ? L.I(mi) : '' }), 3);
     });
     // the countdown at your location
     if (V.countdown && world.my && E.ph.shaking && E.reports.length) {
@@ -6714,7 +6824,7 @@ function voiceLines(world, prefs) {
     if (say === '-') continue;
     if (say) { add(it.t0 + dl, say, 8, true); continue; }
     if (!V[key]) continue;
-    add(it.t0 + dl, voiceAutoFor(world, it, lang), 8, it.type === 'custom');
+    add(it.t0 + dl, voiceAutoFor(world, it, lang), 12, it.type === 'custom');
   }
   for (const c of world.doc.cues || []) {
     if (!c.say || !String(c.say).trim()) continue;
@@ -10800,10 +10910,11 @@ async function saveVideo() {
   catch (e) { note.textContent = dlErrorText(e, 'video'); }
 }
 function setControlsLocked(lock) {
-  for (const el of $$('.cards input, .cards select, .cards button, .adv button, .adv input, .adv select, .adv textarea, #insp *, #timeline, #btnRestart, #btnReport, #btnPlay, #btnLibrary, #btnShare, #btnSettings, input[name=mode], input[name=lang]')) {
+  for (const el of $$('.cards input, .cards select, .cards button, .adv button, .adv input, .adv select, .adv textarea, #insp *, #btnRestart, #btnReport, #btnPlay, #btnPrevMoment, #btnNextMoment, #btnBack5, #btnFwd5, #btnLibrary, #btnShare, #btnSettings, input[name=mode], input[name=lang]')) {
     if (el.id === 'btnRecord2') continue;
     if ('disabled' in el) el.disabled = lock;
   }
+  $('#scrub').setAttribute('aria-disabled', String(!!lock));
   if (!lock) { updateEasyUI(); edUndoUI(); if (S.mode === 'adv') edInspector(); }
 }
 
@@ -10857,14 +10968,13 @@ function frame(now) {
       if (sec !== lastIdleSec) { lastIdleSec = sec; if (!S.originFixed) S.originMs = nowOrigin(); needRender = true; }
     }
     if (needRender || R.interacting || S.stale || R.wantFrame) { needRender = false; R.wantFrame = false; doRender(); }
+    if (S.tau !== SCRUB.lastTau) scrubSync(false);
     if (now - lastHud > 80) { lastHud = now; hud(now); }
   }
   requestAnimationFrame(frame);
 }
 function hud(now) {
-  const tl = $('#timeline');
-  if (document.activeElement !== tl) tl.value = S.tau.toFixed(1);
-  $('#timeOut').textContent = S.intro ? 'Intro' : (S.tau < 0 ? '−' : '+') + Math.abs(S.tau).toFixed(1) + ' s';
+  scrubSync(true);
   if (S.recording) { const el = Math.floor((now - REC.t0) / 1000); $('#recTime').textContent = `${Math.floor(el / 60)}:${String(el % 60).padStart(2, '0')}`; }
   $('#camChip').hidden = S.follow || S.state === 'idle' || S.doc.camera.mode === 'off' || S.recording;
   if (S.mode === 'adv') edPlayhead();
@@ -10873,23 +10983,122 @@ function hud(now) {
     AU.rumble(Math.pow(clamp((I - 1.5) / 5, 0, 1), 1.5) * 0.9);
   } else AU.rumble(0);
 }
+// ---------------------------------------------------------------- the scrub bar
+// The EEW stretches ride above the rail (amber while it's a forecast, red once it's a warning), the key moments are
+// ticks you can snap to, each quake's origin is a diamond under it, and hovering shows the clock time there.
+const SCRUB = { drag: false, wasPlaying: false, marks: [], bands: [], lastTau: null };
+const scrubSpan = () => Math.max(1, (S.world ? S.world.tEnd : 120) - T_START);
+const scrubFrac = (t) => clamp((t - T_START) / scrubSpan(), 0, 1);
+function scrubClock(t) {
+  if (!S.world) return '';
+  const ck = fmtClock(S.originMs + t * 1000, S.world.tz, { h12: !!(S.prefs.clock && S.prefs.clock.h12) });
+  return ck.time + (ck.ap ? ' ' + ck.ap : '');
+}
+function relTime(t) {
+  const a = Math.abs(t), sg = t < 0 ? '−' : '+';
+  return a < 100 ? sg + a.toFixed(1) + ' s' : sg + Math.floor(a / 60) + ':' + String(Math.floor(a % 60)).padStart(2, '0');
+}
+const spanText = (sec) => Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
 function updateTimelineUI() {
-  const tl = $('#timeline');
-  tl.min = T_START; tl.max = S.world.tEnd.toFixed(1);
-  const span = S.world.tEnd - T_START;
-  const marks = $('#tlMarks');
-  marks.textContent = '';
-  const add = (t, c, title) => { const i = h('i', { title, style: `left:${(((t - T_START) / span) * 100).toFixed(2)}%;--c:${c}` }); marks.append(i); };
-  for (const E of S.world.evs) {
-    const r0 = E.reports[0];
-    if (r0) add(r0.t, r0.kind === 'warning' ? '#E5323F' : '#F2B000', 'First EEW');
-    const fw = E.reports.find((r) => r._firstWarn && !r._first);
-    if (fw) add(fw.t, '#E5323F', 'Warning issued');
+  const w = S.world, sc = $('#scrub');
+  sc.setAttribute('aria-valuemin', String(T_START)); sc.setAttribute('aria-valuemax', w.tEnd.toFixed(1));
+  $('#durOut').textContent = '/ ' + spanText(w.tEnd - T_START);
+  const pct = (t) => (scrubFrac(t) * 100).toFixed(3) + '%';
+  // EEW stretches
+  const lane = $('#scrubLane');
+  lane.textContent = '';
+  SCRUB.bands = [];
+  for (const E of w.evs) {
+    if (!E.reports.length) continue;
+    const r0 = E.reports[0], rl = E.reports[E.reports.length - 1], fw = E.reports.find((r) => r.kind === 'warning');
+    const end = rl.t + 2, cancelled = rl.kind === 'cancel';
+    const band = (a, b, c, label) => { lane.append(h('i', { style: `left:${pct(a)};width:max(4px,calc(${pct(b)} - ${pct(a)}));--c:${c}` })); SCRUB.bands.push({ t0: a, t1: b, label }); };
+    const nm = E.name && (enUI() ? E.name.en || E.name.ja : E.name.ja || E.name.en);
+    if (cancelled) band(r0.t, end, '#7D8EA1', `EEW, cancelled${nm ? ' · ' + nm : ''}`);
+    else if (fw && fw.t > r0.t) { band(r0.t, fw.t, '#F2B000', `EEW forecast${nm ? ' · ' + nm : ''}`); band(fw.t, end, '#E5323F', `EEW warning${nm ? ' · ' + nm : ''}`); }
+    else band(r0.t, end, fw ? '#E5323F' : '#F2B000', `EEW ${fw ? 'warning' : 'forecast'}${nm ? ' · ' + nm : ''}`);
   }
-  for (const it of S.world.items) {
-    if (it.type === 'eew' || it.type === 'countdown') continue;
-    add(it.t0, BOX_TYPES[it.type].color, BOX_TYPES[it.type].label);
+  // ticks: the key moments, the other boxes, and each quake's origin
+  const marks = [...keyMoments(w).map((m) => ({ t: m.t, c: m.c, label: ((m.label.match(/^E\d+ /) || [''])[0]) + (m.tip || m.label) }))];
+  for (const it of w.items) {
+    if (['eew', 'countdown', 'flash', 'report'].includes(it.type) || it.hidden) continue;
+    marks.push({ t: it.t0, c: BOX_TYPES[it.type].color, label: (enUI() ? BOX_TYPES[it.type].label : BOX_TYPES[it.type].ja || BOX_TYPES[it.type].label) + ' appears' });
   }
+  w.evs.forEach((E, i) => { if (E.ph.shaking) marks.push({ t: E.ev.t0, c: '#FF8A3D', label: `${w.evs.length > 1 ? 'E' + (i + 1) + ' ' : ''}M${E.ph.M.toFixed(1)} quake starts`, q: true }); });
+  SCRUB.marks = marks.filter((m) => isFinite(m.t) && m.t >= T_START && m.t <= w.tEnd).sort((a, b) => a.t - b.t);
+  const box = $('#tlMarks');
+  box.textContent = '';
+  for (const m of SCRUB.marks) box.append(h('i', { class: m.q ? 'q' : '', style: `left:${pct(m.t)};--c:${m.c}` }));
+  SCRUB.lastTau = null;
+  scrubSync(true);
+}
+function scrubSync(full) {
+  if (!S.world) return;
+  SCRUB.lastTau = S.tau;
+  const f = (scrubFrac(S.tau) * 100).toFixed(3) + '%';
+  $('#scrubFill').style.width = f;
+  $('#scrubHead').style.left = f;
+  if (!full) return;
+  const ck = S.intro ? 'Intro' : scrubClock(S.tau), rel = S.intro ? 'Intro' : relTime(S.tau);
+  $('#clockOut').textContent = ck;
+  $('#timeOut').textContent = rel;
+  const sc = $('#scrub');
+  sc.setAttribute('aria-valuenow', S.tau.toFixed(1));
+  sc.setAttribute('aria-valuetext', S.intro ? 'Intro' : `${ck}, ${rel}`);
+}
+// where on the bar a pointer is, snapped to a tick within a few pixels (hold Alt for no snapping)
+function scrubAt(e, snap) {
+  const r = $('#scrub').getBoundingClientRect();
+  const x = clamp(e.clientX - r.left, 0, r.width), wpx = Math.max(1, r.width);
+  let t = T_START + (x / wpx) * scrubSpan(), mark = null;
+  if (snap) {
+    let best = 7;
+    for (const m of SCRUB.marks) { const d = Math.abs(scrubFrac(m.t) * wpx - x); if (d < best) { best = d; mark = m; } }
+    if (mark) t = mark.t;
+  }
+  return { t: clamp(t, T_START, S.world.tEnd), mark, x: mark ? scrubFrac(mark.t) * wpx : x, w: wpx };
+}
+function scrubTip(p) {
+  const tip = $('#scrubTip');
+  const band = SCRUB.bands.find((b) => p.t >= b.t0 && p.t <= b.t1);
+  $('#scrubTipT').textContent = scrubClock(p.t);
+  $('#scrubTipL').textContent = relTime(p.t) + (p.mark ? ' · ' + p.mark.label : band ? ' · ' + band.label : '');
+  tip.hidden = false;
+  // keep it on the bar near the ends
+  const half = tip.offsetWidth / 2;
+  tip.style.left = clamp(p.x, half - 6, p.w - half + 6) + 'px';
+  $('#scrubHover').style.width = (p.x / p.w * 100).toFixed(2) + '%';
+  for (const el of $$('#tlMarks i.hot')) el.classList.remove('hot');
+  if (p.mark) { const k = SCRUB.marks.indexOf(p.mark); const el = $('#tlMarks').children[k]; if (el) el.classList.add('hot'); }
+}
+function bindScrub() {
+  const sc = $('#scrub');
+  sc.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || S.recording || !S.world) return;
+    e.preventDefault();
+    sc.focus({ preventScroll: true });
+    try { sc.setPointerCapture(e.pointerId); } catch (er) { /* fine */ }
+    SCRUB.drag = true; sc.classList.add('drag');
+    SCRUB.wasPlaying = S.state === 'playing';
+    if (SCRUB.wasPlaying) pausePlayback();
+    const p = scrubAt(e, !e.altKey);
+    seek(p.t); scrubTip(p);
+  });
+  sc.addEventListener('pointermove', (e) => {
+    if (!S.world) return;
+    const p = scrubAt(e, !e.altKey);
+    if (SCRUB.drag) seek(p.t);
+    if (e.pointerType !== 'touch' || SCRUB.drag) scrubTip(p);
+  });
+  const end = () => {
+    if (!SCRUB.drag) return;
+    SCRUB.drag = false; sc.classList.remove('drag');
+    if (SCRUB.wasPlaying && !S.ended) startPlayback(false);
+    if (!sc.matches(':hover')) $('#scrubTip').hidden = true;
+  };
+  sc.addEventListener('pointerup', end);
+  sc.addEventListener('pointercancel', end);
+  sc.addEventListener('pointerleave', () => { if (!SCRUB.drag) { $('#scrubTip').hidden = true; for (const el of $$('#tlMarks i.hot')) el.classList.remove('hot'); } });
 }
 
 // ---------------------------------------------------------------- toast & dialogs
@@ -11083,7 +11292,11 @@ function bindTransport() {
   $('#btnPlay').addEventListener('click', togglePlay);
   $('#btnRestart').addEventListener('click', () => { if (!S.recording) startPlayback(true); });
   $('#btnReport').addEventListener('click', () => { if (!S.recording && S.world) seek(reportTime()); });
-  $('#timeline').addEventListener('input', (e) => seek(+e.target.value));
+  bindScrub();
+  $('#btnPrevMoment').addEventListener('click', () => jumpMoment(-1));
+  $('#btnNextMoment').addEventListener('click', () => jumpMoment(1));
+  $('#btnBack5').addEventListener('click', () => seek(S.tau - 5));
+  $('#btnFwd5').addEventListener('click', () => seek(S.tau + 5));
   for (const r of $$('input[name=speed]')) r.addEventListener('change', () => { S.speed = +r.value; saveStateSoon(); syncTouchUi(); });
   $('#btnSound').addEventListener('click', () => { S.prefs.sound.on = !S.prefs.sound.on; AU.ensure(); prefsChanged(); });
   $('#volume').addEventListener('input', (e) => { S.prefs.sound.vol = +e.target.value; AU.ensure(); prefsChanged(); });
@@ -11866,7 +12079,7 @@ function buildSoundSettings() {
     fRow('Volume', cRange(() => V.vol ?? 1, vset('vol'), { min: 0, max: 2, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' })),
     fRow('Start after the chime', cRange(() => V.delay ?? 1.2, vset('delay'), { min: 0, max: 4, step: 0.1, fmt: (v) => v.toFixed(1) + ' s' })));
   root.append(vb);
-  const pick = [['eew', 'EEW: first report, warnings, the emergency warning'], ['update', 'Every EEW update (magnitude and forecast)'], ['cancel', 'EEW cancelled'],
+  const pick = [['eew', 'EEW: the first report, where to brace for strong shaking, the forecast climbing, and shaking detected'], ['update', 'Every EEW update (magnitude and forecast)'], ['cancel', 'EEW cancelled'],
     ['countdown', 'Countdown at your location (10 seconds, arriving)'], ['flash', 'Intensity flash'], ['report', 'Hypocenter and intensity reports'],
     ['tsunami', 'Tsunami warnings'], ['longperiod', 'Long-period ground motion'], ['custom', 'Custom alert boxes (their title)']];
   const vg = h('div', { class: 'vchecks' + (V.on ? '' : ' off') }, ...pick.map(([k, label]) => cChk(() => !!V[k], vset(k), label)));
@@ -12081,7 +12294,7 @@ async function boot() {
   needRender = true;
   Promise.all([fontsP, soundsP, projBoot()]).then(syncBoot).catch(() => {});
   window.__quaker = {
-    S, R, AU, REC, ED, EXP, VOICE,
+    S, R, AU, REC, ED, EXP, VOICE, warnAreaNames,
     api: { rebuild, seek, startPlayback, pausePlayback, setMode, loadPreset, loadReal: (id) => loadReal(REAL_QUAKES.find((q) => q.id === id)), guessStrike, problems: () => PROB.list, scene: (t) => sceneAt(S.world, t ?? S.tau, S.prefs), fitView, setViewPreset,
       render: doRender, applyPayload, sharePayload, encodeShare, decodeShare, doImport, openSettings, openLibrary, openShare, setFollow, startRecording, stopRecording,
       edSelect, edEdit, edAddBox, edAddEvent, edUndo, edRedo, edFit, startPick, endPick, prefsChanged, addSoundFile, loadSoundFiles, addFontFile, importFonts, removeFontFamily, fontInstalled, fontInfo, FONTS: () => FONTS, FONT_STACKS: () => ({ jp: FONT_JP, ui: FONT_UI, num: FONT_NUM, sc: { ...FONT_SC } }),
